@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- короткий отклик, что штрихкод прочитан -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- самообновление: приложение само скачивает новую версию и просит Android её поставить -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- http к домашнему серверу и доверие корню РГБ — в network_security_config;
+         usesCleartextTraffic оставлен для ясности, но при этом файле не действует -->
+    <application
+        android:name=".FilinApp"
+        android:label="Филин"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:theme="@style/Filin"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:usesCleartextTraffic="true">
+
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".SetupActivity" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".ScanActivity" android:screenOrientation="portrait" />
+        <activity android:name=".PairScanActivity" android:screenOrientation="portrait" />
+        <!-- вертикально, как сканер: при повороте экран пересоздаётся и форма с выбранной записью РГБ терялась бы -->
+        <activity android:name=".BookActivity" android:screenOrientation="portrait" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".RslActivity" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="ru.filin.app.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>

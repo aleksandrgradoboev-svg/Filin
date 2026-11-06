@@ -1,0 +1,11 @@
+{{define "content"}}
+<h1>На руках</h1>
+{{if .Loans}}
+<p class="muted">Отдано книг: {{len .Loans}}.
+  {{range $i, $p := .People}}{{if $i}} · {{end}}<a href="{{who $p.Name}}">{{$p.Name}}</a> ({{$p.Count}}){{end}}</p>
+{{template "loanlist" (loanlist .Loans .Today "/loans")}}
+{{else}}
+<div class="empty">Все книги дома. Отдать почитать можно из карточки книги — у экземпляра кнопка «Дать почитать».</div>
+{{end}}
+{{end}}
+

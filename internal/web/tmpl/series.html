@@ -1,0 +1,17 @@
+{{define "content"}}
+<p class="muted">Серия</p>
+<h1>{{.Title}}</h1>
+<p class="muted">Изданий в каталоге: {{len .Items}}. Номера — как указаны в карточках; каких номеров не хватает,
+  видно по пропускам.</p>
+<ul class="tiles">
+  {{range .Items}}
+  <li><a href="/book/{{.ID}}" title="{{.Title}}">
+    {{if .Cover}}<img class="cover" src="/cover/{{.Cover}}" alt="" loading="lazy">
+    {{else}}<span class="cover none"><span>{{.Title}}</span><small>{{.Authors}}</small></span>{{end}}
+    {{with .No}}<span class="tag">№ {{.}}</span>{{end}}
+    <span class="t">{{.Title}}</span>
+    <span class="a">{{.Authors}}{{if .Year}}{{if .Authors}}, {{end}}{{.Year}}{{end}}</span>
+  </a></li>
+  {{end}}
+</ul>
+{{end}}

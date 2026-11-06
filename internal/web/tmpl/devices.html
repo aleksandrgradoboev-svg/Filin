@@ -1,0 +1,49 @@
+{{define "content"}}
+<h1>Телефоны</h1>
+<p class="muted">Из домашней сети Филин открывается только с привязанных телефонов. Этот компьютер ходит без привязки.
+  Привязать и отозвать телефон можно только здесь, с компьютера.</p>
+
+{{with .Phone}}<p>Адрес Филина для телефона: {{range $i, $u := .}}{{if $i}} или {{end}}<b>{{$u}}</b>{{end}}
+  <span class="muted">— Филин работает, пока он запущен на этом компьютере.</span></p>
+{{else}}<div class="note err">Домашняя сеть не найдена — телефон Филина не увидит. Компьютер подключён к роутеру?</div>{{end}}
+
+<h2>1. Поставить приложение</h2>
+{{if .AppQR}}
+<div class="qr-step">
+  <img class="qr" src="{{.AppQR}}" alt="QR-код: скачать приложение Филин">
+  <div>Наведите камеру телефона на этот код и откройте ссылку — скачается приложение Филин.
+    Android спросит, можно ли ставить приложения из браузера, — разрешите.
+    <div class="muted">Телефон должен быть в той же домашней сети (Wi-Fi), что и компьютер.</div></div>
+</div>
+{{else}}<p class="muted">Откройте на телефоне адрес Филина и допишите <b>/app.apk</b>.</p>{{end}}
+
+<h2>2. Привязать телефон</h2>
+{{if .Code}}
+<div class="note ok pair">
+  {{if .PairQR}}<div class="qr-step">
+    <img class="qr" src="{{.PairQR}}" alt="QR-код привязки телефона">
+    <div>В приложении Филин нажмите <b>«📷 Сканировать код с компьютера»</b> и наведите камеру на этот код.
+      <div class="muted">Или введите в приложении адрес и код вручную:</div>
+      <div class="code">{{.Code}}</div></div>
+  </div>{{else}}
+  <div>Код привязки — введите его в приложении Филин на телефоне:</div>
+  <div class="code">{{.Code}}</div>{{end}}
+  <div class="muted">Действует до {{.Expires}}, один раз. После пяти неверных попыток сгорает.</div>
+</div>
+{{else}}
+<form method="post" action="/devices/code"><button class="btn">Привязать телефон — показать код</button></form>
+{{end}}
+
+<h2>Привязанные</h2>
+{{if .Devices}}
+<ul class="copies">
+  {{range .Devices}}
+  <li>
+    <b>{{.Name}}</b> <span class="muted">· привязан {{.CreatedAt}}{{with .LastSeen}} · последний раз {{.}}{{else}} · ещё не заходил{{end}}</span>
+    <form method="post" action="/devices/{{.ID}}/revoke" class="inline-del" onsubmit="return confirm('Отозвать доступ у «{{.Name}}»?')">
+      <button class="btn small ghost">Отозвать</button></form>
+  </li>
+  {{end}}
+</ul>
+{{else}}<p class="muted">Пока ни одного.</p>{{end}}
+{{end}}

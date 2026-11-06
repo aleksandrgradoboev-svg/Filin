@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- фото обложки с камеры и скачанное обновление — во временной папке приложения -->
+    <cache-path name="cache" path="." />
+</paths>

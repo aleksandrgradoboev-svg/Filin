@@ -1,0 +1,7 @@
+{{define "content"}}
+<h1>{{if .All}}Все люди из карточек{{else}}Авторы{{end}}</h1>
+<p class="muted">{{len .People}} · {{if .All}}<a href="/people">только авторы</a>{{else}}<a href="/people?all">с переводчиками, редакторами, художниками</a>{{end}}</p>
+<ul class="people-list">
+  {{range .People}}<li><a href="{{personurl .Name}}">{{.Name}}</a>{{with .Life}} <span class="muted">({{.}})</span>{{end}} <span class="tag">{{.Count}}</span></li>{{end}}
+</ul>
+{{end}}

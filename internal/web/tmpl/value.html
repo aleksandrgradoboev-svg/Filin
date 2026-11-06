@@ -1,0 +1,35 @@
+{{define "content"}}
+<h1>Ценность</h1>
+<div class="stats">
+  <div><b>{{rub .Sum.Total}}</b><span>оценка библиотеки</span></div>
+  <div><b>{{.Sum.Valued}} из {{.Sum.Copies}}</b><span>экземпляров оценено</span></div>
+  <div><b>{{.Sum.Cherished}}</b><span>❤️ дорожу</span></div>
+</div>
+<p class="muted">Оценка «для себя»: порядок и ориентир, а не страховая сумма. Действует последняя оценка экземпляра;
+  прежние сохраняются в карточке. Неоценённые в сумму не входят — сумма растёт по мере оценки.</p>
+
+<h2>Самое ценное</h2>
+{{if .Top}}{{template "valuelist" .Top}}
+{{else}}<p class="muted">Пока ничего не оценено. Оценить — в карточке книги, у экземпляра «Оценить».</p>{{end}}
+
+<h2>❤️ Дорожу</h2>
+{{if .Cherished}}{{template "valuelist" .Cherished}}
+{{else}}<p class="muted">Ничего не отмечено. Отметка «дорожу» — в правке экземпляра: для памятного и собранного,
+  что дороже своей цены.</p>{{end}}
+{{end}}
+
+{{define "valuelist"}}
+<ul class="loans">
+  {{range .}}
+  <li>
+    <a href="/book/{{.EditionID}}" class="lthumb">{{if .Cover}}<img src="/cover/{{.Cover}}" alt="" loading="lazy">{{else}}<span class="thumb none"></span>{{end}}</a>
+    <div>
+      <a href="/book/{{.EditionID}}"><b>{{.Title}}</b>{{if .Volume}} <span class="vol">{{.Volume}}</span>{{end}}</a>
+      {{if .Authors}}<div class="muted">{{.Authors}}</div>{{end}}
+      <div class="muted">{{with grade .Grade}}состояние: {{.}}{{end}}{{if .Cherished}} ❤️{{end}}</div>
+    </div>
+    <div class="amount">{{if .ValuedOn}}<b>{{rub .Amount}}</b><div class="muted">{{date .ValuedOn}}</div>{{else}}<span class="muted">не оценено</span>{{end}}</div>
+  </li>
+  {{end}}
+</ul>
+{{end}}

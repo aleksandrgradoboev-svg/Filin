@@ -1,0 +1,17 @@
+{{define "content"}}
+<h1>Экземпляр</h1>
+<p><a href="/book/{{.E.ID}}">{{.E.Title}}{{if .E.Volume}} {{.E.Volume}}{{end}}</a></p>
+<form method="post" action="/copy/{{.C.ID}}/edit" class="form">
+  {{template "copyfields" (cf .Shelves .Fields)}}
+  <div class="row2">
+    <label>Переплёт<input name="binding" value="{{.C.Binding}}"></label>
+    <label>Экслибрис<input name="bookplate" value="{{.C.Bookplate}}"></label>
+  </div>
+  <label>Надписи, автографы<textarea name="inscriptions" rows="2">{{.C.Inscriptions}}</textarea></label>
+  <label>История экземпляра<textarea name="history" rows="3" placeholder="добыли за 20 кг макулатуры">{{.C.History}}</textarea></label>
+  <p><button class="btn">Сохранить</button> <a href="/book/{{.E.ID}}">отмена</a></p>
+</form>
+<form method="post" action="/copy/{{.C.ID}}/delete" class="danger" onsubmit="return confirm('Убрать экземпляр из каталога? Издание останется.')">
+  <button class="btn ghost">Убрать экземпляр</button>
+</form>
+{{end}}

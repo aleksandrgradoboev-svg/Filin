@@ -1,0 +1,20 @@
+# данные библиотеки — не в репозиторий
+data/
+*.db
+*.db-*
+photos/
+# секреты и ключи
+*.key
+*.pem
+secrets*
+.env
+# окружение
+__pycache__/
+.venv/
+
+# выпуск — собирается release.ps1, кладётся на GitHub, в git не нужен
+dist/
+
+# приложение, вшиваемое в выпуск (release.ps1 кладёт на время сборки)
+internal/bundled/app/filin.apk
+internal/bundled/app/app.json

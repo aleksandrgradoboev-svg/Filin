@@ -1,0 +1,19 @@
+{{define "copyfields"}}
+<div class="row3">
+  <label>Комната<input name="room" list="rooms" value="{{.C.Room}}"></label>
+  <label>Шкаф<input name="bookcase" list="bookcases" value="{{.C.Bookcase}}"></label>
+  <label>Полка<input name="shelf" list="shelves" value="{{.C.Shelf}}"></label>
+</div>
+<datalist id="rooms">{{range .Rooms}}<option value="{{.}}">{{end}}</datalist>
+<datalist id="bookcases">{{range .Bookcases}}<option value="{{.}}">{{end}}</datalist>
+<datalist id="shelves">{{range .ShelfNames}}<option value="{{.}}">{{end}}</datalist>
+<div class="row2">
+  <label>Состояние
+    <select name="grade">{{range $i, $g := grades}}<option value="{{$i}}" {{if eq $i $.C.Grade}}selected{{end}}>{{if $i}}{{$g}}{{else}}— не оценено —{{end}}</option>{{end}}</select></label>
+  <label>Подробности состояния<input name="condition" value="{{.C.Condition}}" placeholder="например: корешок потёрт"></label>
+</div>
+<label>Заметки к экземпляру<textarea name="copy_notes" rows="2">{{.C.Notes}}</textarea></label>
+<label class="check"><input type="checkbox" name="cherished" {{if .C.Cherished}}checked{{end}}> ❤️ дорожу — ценность памятная или собирательская</label>
+<label class="check"><input type="checkbox" name="is_read" {{if .C.Read}}checked{{end}}> 📖 прочитана</label>
+<label class="check"><input type="checkbox" name="no_lend" {{if .C.NoLend}}checked{{end}}> не давать почитать</label>
+{{end}}

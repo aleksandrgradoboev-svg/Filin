@@ -1,0 +1,115 @@
+{{define "content"}}
+{{if .Added}}<div class="note ok">Сохранено.</div>{{end}}
+{{with .Warn}}<div class="note err">Книга сохранена, но не всё: {{if eq . "cover"}}обложка не записалась{{else if eq . "copy"}}экземпляр не завёлся{{else}}не записались обложка и экземпляр{{end}}. Подробности — в журнале сервера.</div>{{end}}
+<article class="card{{if .E.Cover}} has-cover{{end}}">
+  {{if .E.Cover}}<a href="/cover/{{.E.Cover}}" class="cover-big"><img src="/cover/{{.E.Cover}}" alt="Обложка"></a>{{end}}
+  <div>
+  <h1>{{.E.Title}}{{if .E.Volume}} <span class="vol">{{.E.Volume}}</span>{{end}}</h1>
+  <dl>
+    {{range people .E.People}}<dt>{{.Label}}</dt><dd>{{range $i, $n := .Names}}{{if $i}}, {{end}}<a href="{{personurl $n}}">{{$n}}</a>{{end}}</dd>{{end}}
+    {{if or .E.Publisher .E.City .E.Year}}<dt>Издание</dt><dd>{{.E.City}}{{if and .E.City .E.Publisher}}: {{end}}{{.E.Publisher}}{{if .E.Year}}, {{.E.Year}}{{end}}</dd>{{end}}
+    {{with .E.EditionNote}}<dt>Сведения</dt><dd>{{.}}</dd>{{end}}
+    {{if .E.Series}}<dt>Серия</dt><dd><a href="/series/{{.E.SeriesID}}">{{.E.Series}}</a>{{with .E.SeriesNo}}, № {{.}}{{end}}</dd>{{end}}
+    {{with .Genres}}<dt>Жанры</dt><dd class="chips">{{range .}}<a class="chip" href="/?g={{.ID}}">{{.Name}}</a>{{end}}</dd>{{end}}
+    {{if or .E.OrigTitle .E.OrigLanguage}}<dt>Оригинал</dt><dd>{{.E.OrigTitle}}{{if and .E.OrigTitle .E.OrigLanguage}} · {{end}}{{with .E.OrigLanguage}}пер. с {{.}}{{end}}</dd>{{end}}
+    {{with .E.Language}}<dt>Язык</dt><dd>{{.}}</dd>{{end}}
+    {{if or .E.CoverType .E.Format .E.Pages}}<dt>Книга</dt><dd>{{.E.CoverType}}{{if and .E.CoverType (or .E.Format .E.Pages)}} · {{end}}{{.E.Format}}{{if and .E.Format .E.Pages}} · {{end}}{{if .E.Pages}}{{.E.Pages}} с.{{end}}</dd>{{end}}
+    {{if or .E.Circulation .E.PrintPrice}}<dt>Тираж, цена</dt><dd>{{if .E.Circulation}}{{.E.Circulation}} экз.{{end}}{{if and .E.Circulation .E.PrintPrice}} · {{end}}{{.E.PrintPrice}}</dd>{{end}}
+    {{if or .E.Paper .E.Illustrations .E.Design}}<dt>Полиграфия</dt><dd>{{with .E.Paper}}бумага {{.}}{{end}}{{if and .E.Paper (or .E.Illustrations .E.Design)}} · {{end}}{{with .E.Illustrations}}иллюстрации {{.}}{{end}}{{if and .E.Illustrations .E.Design}} · {{end}}{{.E.Design}}</dd>{{end}}
+    {{if or .E.Dimensions .E.Weight}}<dt>Размеры, вес</dt><dd>{{with .E.Dimensions}}{{.}} мм{{end}}{{if and .E.Dimensions .E.Weight}} · {{end}}{{if .E.Weight}}{{.E.Weight}} г{{end}}</dd>{{end}}
+    {{with .E.Printer}}<dt>Типография</dt><dd>{{.}}</dd>{{end}}
+    {{with .E.AgeRating}}<dt>Возраст</dt><dd>{{.}}</dd>{{end}}
+    {{if or .E.BBK .E.UDK .E.AuthorSign}}<dt>Индексы</dt><dd>{{with .E.BBK}}ББК {{.}} {{end}}{{with .E.UDK}}УДК {{.}} {{end}}{{with .E.AuthorSign}}авт. знак {{.}}{{end}}</dd>{{end}}
+    {{if .E.ISBNs}}<dt>ISBN</dt><dd>{{range .E.ISBNs}}<span class="isbn{{if not .Valid}} bad{{end}}" {{if not .Valid}}title="контрольная цифра не сходится"{{end}}>{{.Norm}}{{if not .Valid}} ⚠️{{end}}</span> {{end}}</dd>{{end}}
+    {{if .E.Notes}}<dt>Заметки</dt><dd class="pre">{{.E.Notes}}</dd>{{end}}
+    {{if ne .E.Source "manual"}}<dt>Источник</dt><dd>{{.E.Source}}{{if .E.SourceURL}} · <a href="{{.E.SourceURL}}">ссылка</a>{{end}}</dd>{{end}}
+  </dl>
+  {{with .E.Annotation}}<p class="annotation pre">{{.}}</p>{{end}}
+  {{with .E.Contents}}<details class="past"><summary>Содержание</summary><div class="pre">{{.}}</div></details>{{end}}
+  <p><a class="btn ghost" href="/book/{{.E.ID}}/edit">✏️ Править издание</a>
+    <a class="btn ghost" href="/book/{{.E.ID}}/alib">📚 {{if .E.Annotation}}Аннотация с alib{{else}}Найти аннотацию на alib{{end}}</a></p>
+  </div>
+</article>
+
+<h2>Экземпляры</h2>
+{{if .Copies}}
+<ul class="copies">
+  {{range .Copies}}
+  <li>
+    <div><b>{{with shelf .Room .Bookcase .Shelf}}{{.}}{{else}}полка не указана{{end}}</b>
+      {{if .Cherished}}<span class="tag love">❤️ дорожу</span>{{end}}
+      {{if .Read}}<span class="tag read">📖 прочитана</span>{{end}}
+      {{if .NoLend}}<span class="tag warn">не давать</span>{{end}}</div>
+    {{if or .Grade .Condition}}<div class="muted">состояние: {{with grade .Grade}}<b>{{.}}</b>{{end}}{{if and .Grade .Condition}}; {{end}}{{.Condition}}</div>{{end}}
+
+    {{with .Value}}<div class="value">💰 <b>{{rub .Amount}}</b> <span class="muted">на {{date .ValuedOn}}{{if .Basis}} · {{.Basis}}{{end}}{{if .SourceURL}} · <a href="{{.SourceURL}}" rel="noreferrer" target="_blank">источник</a>{{end}}</span></div>{{end}}
+    <details class="lend" {{if eq $.ValueCopy .ID}}open{{end}}>
+      <summary>{{if .Value}}Переоценить{{else}}Оценить{{end}}</summary>
+      {{if eq $.ValueCopy .ID}}<div class="note err">{{$.ValueErr}}</div>{{end}}
+      <form method="post" action="/copy/{{.ID}}/value" class="form">
+        <div class="row3">
+          <label>Сумма, ₽<input name="amount" inputmode="numeric" required placeholder="1500"></label>
+          <label>На дату<input type="date" name="valued_on" value="{{$.Today}}"></label>
+          <label>Ссылка <span class="hint">необязательно</span><input name="source_url" type="url" placeholder="https://www.alib.ru/…"></label>
+        </div>
+        <label>Основание<input name="basis" placeholder="например: три предложения на alib.ru, от 1200 до 1800"></label>
+        <p><button class="btn">Записать оценку</button></p>
+      </form>
+      {{with .Valuations}}
+      <ul class="vals">{{range .}}
+        <li>{{rub .Amount}} — {{date .ValuedOn}}{{if .Basis}} · {{.Basis}}{{end}}
+          <form method="post" action="/valuation/{{.ID}}/delete" class="inline-del" onsubmit="return confirm('Убрать эту оценку?')"><button class="linklike" title="Убрать ошибочную оценку">✕</button></form></li>
+      {{end}}</ul>
+      {{end}}
+    </details>
+    {{if .History}}<div class="pre">{{.History}}</div>{{end}}
+    {{if .Notes}}<div class="muted pre">{{.Notes}}</div>{{end}}
+
+    {{with .Loan}}
+    <div class="loan{{if .Overdue $.Today}} overdue{{end}}">
+      📖 На руках: <a href="{{who .Borrower}}"><b>{{.Borrower}}</b></a>, с {{date .LentOn}}
+      {{if .DueOn}}· срок {{date .DueOn}}{{if .Overdue $.Today}} — <b>прошёл</b>{{end}}{{end}}
+      {{if .Note}}<div class="muted pre">{{.Note}}</div>{{end}}
+      <form method="post" action="/loan/{{.ID}}/return" class="row-form">
+        <input type="date" name="returned_on" value="{{$.Today}}" aria-label="Дата возврата">
+        <button class="btn small">Вернули</button>
+      </form>
+    </div>
+    {{else}}
+    <details class="lend" {{if eq $.LendCopy .ID}}open{{end}}>
+      <summary>Дать почитать</summary>
+      {{if eq $.LendCopy .ID}}<div class="note err">{{$.LendErr}}</div>{{end}}
+      <form method="post" action="/copy/{{.ID}}/lend" class="form"
+        {{if .NoLend}}onsubmit="return confirm('Этот экземпляр помечен «не давать почитать». Всё равно отдать?')"{{end}}>
+        <div class="row3">
+          <label>Кому<input name="borrower" list="borrowers" required></label>
+          <label>Когда<input type="date" name="lent_on" value="{{$.Today}}"></label>
+          <label>Вернуть до <span class="hint">необязательно</span><input type="date" name="due_on"></label>
+        </div>
+        <label>Заметка<input name="note" placeholder="например: просил не загибать страницы"></label>
+        <p><button class="btn">Отдать</button></p>
+      </form>
+    </details>
+    {{end}}
+
+    {{with .PastLoans}}
+    <details class="past">
+      <summary>Кто брал раньше ({{len .}})</summary>
+      <ul>{{range .}}<li><a href="{{who .Borrower}}">{{.Borrower}}</a> — {{date .LentOn}} … {{date .ReturnedOn}}{{if .Note}} · {{.Note}}{{end}}</li>{{end}}</ul>
+    </details>
+    {{end}}
+    <a href="/copy/{{.ID}}/edit">править экземпляр</a>
+  </li>
+  {{end}}
+</ul>
+{{else}}<p class="muted">Экземпляров нет: издание описано, но на полке не стоит.</p>{{end}}
+<datalist id="borrowers">{{range .Borrowers}}<option value="{{.}}">{{end}}</datalist>
+
+<details class="box" {{if .OpenCopy}}open{{end}}>
+  <summary>+ Добавить экземпляр</summary>
+  <form method="post" action="/book/{{.E.ID}}/copy">
+    {{template "copyfields" (cf .Shelves .Blank)}}
+    <button class="btn">Добавить экземпляр</button>
+  </form>
+</details>
+{{end}}

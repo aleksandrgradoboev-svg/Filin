@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- С этим файлом android:usesCleartextTraffic в манифесте не действует — всё здесь. -->
+<network-security-config>
+    <!-- сервер Филина дома, в своей сети, по http — HTTPS там нет -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <!-- РГБ подписана корнем GlobalSign Root R46 (2019), которого нет в старых Android.
+         Корень взят у GlobalSign (secure.globalsign.com/cacert/rootr46.crt), SHA-256
+         4F:A3:12:6D:8D:3A:11:D1:C4:85:5A:4F:80:7C:BA:D6:CF:91:9D:3A:5A:88:B0:3B:EA:2C:63:72:D9:3C:40:C9;
+         доверие ему — только для адресов rsl.ru, не для всего приложения. -->
+    <domain-config>
+        <domain includeSubdomains="true">rsl.ru</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/globalsign_root_r46" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

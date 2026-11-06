@@ -1,0 +1,43 @@
+{{define "content"}}
+<p><a href="/book/{{.E.ID}}">← {{.E.Title}}</a></p>
+<h1>Аннотация с alib</h1>
+<form method="get" action="/book/{{.E.ID}}/alib" class="form">
+  <div class="row2">
+    <label>Фамилия автора <span class="hint">пусто — книга без автора</span><input name="surname" value="{{.Surname}}"></label>
+    <label>Название <span class="hint">коротко, без подзаголовка</span><input name="title" value="{{.Name}}" required></label>
+  </div>
+  <p><button class="btn ghost">Искать на alib</button></p>
+</form>
+
+{{with .Err}}<div class="note err">{{.}}</div>{{end}}
+{{if .Page.URL}}
+  {{if not .Page.Found}}
+  <div class="note err">На alib такой страницы нет: <a href="{{.Page.URL}}" rel="noreferrer" target="_blank">{{.Page.URL}}</a>.
+    Поправьте фамилию или название — например, без «Том 1» или с другим написанием фамилии.</div>
+  {{else}}
+  <p class="muted">{{.Page.Heading}} · <a href="{{.Page.URL}}" rel="noreferrer" target="_blank">страница на alib ↗</a></p>
+  {{if .Page.Annotation}}
+  <form method="post" action="/book/{{.E.ID}}/alib" class="form">
+    <input type="hidden" name="source" value="{{.Page.URL}}">
+    <label>Аннотация <span class="hint">одна на все издания этой страницы; можно поправить</span>
+      <textarea name="annotation" rows="8">{{.Page.Annotation}}</textarea></label>
+    {{with .E.Annotation}}
+    <div class="note">Сейчас в карточке: <span class="pre">{{.}}</span></div>
+    <label class="check"><input type="checkbox" name="replace" value="1"> заменить</label>
+    {{end}}
+    <p><button class="btn">Взять в аннотацию</button></p>
+  </form>
+  {{else}}
+  <div class="note">Аннотации у этой страницы на alib нет — только предложения продавцов.</div>
+  {{end}}
+  {{with .Page.Offers}}
+  <h2>В продаже — {{len .}}</h2>
+  <ul class="vals">{{range .}}
+    <li>{{.Desc}}{{with .Condition}} <span class="muted">· {{.}}</span>{{end}}
+      {{if .Price}} — {{if .URL}}<a href="{{.URL}}" rel="noreferrer" target="_blank">{{.Price}}</a>{{else}}{{.Price}}{{end}}{{end}}
+      {{with .Seller}}<span class="muted">· {{.}}</span>{{end}}</li>
+  {{end}}</ul>
+  {{end}}
+  {{end}}
+{{end}}
+{{end}}

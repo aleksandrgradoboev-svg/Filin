@@ -1,0 +1,14 @@
+{{define "content"}}
+<h1>Сканер ISBN</h1>
+<div id="scan-help" class="note" hidden></div>
+<div class="scanner">
+  <video id="video" playsinline muted></video>
+  <div class="frame"></div>
+</div>
+<p id="scan-status" class="muted">Наведите камеру на штрихкод книги (начинается с 978 или 979).</p>
+<form method="get" action="/add" class="search">
+  <input name="isbn" inputmode="numeric" placeholder="или введите ISBN руками">
+  <button class="btn">Дальше</button>
+</form>
+<script src="/static/scan.js"></script>
+{{end}}

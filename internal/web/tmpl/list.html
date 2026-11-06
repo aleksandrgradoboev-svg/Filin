@@ -1,0 +1,58 @@
+{{define "content"}}
+<form class="search" method="get" action="/">
+  <input type="search" name="q" value="{{.Q}}" placeholder="Название, автор, серия, жанр или ISBN">
+  {{if eq .View "list"}}<input type="hidden" name="view" value="list">{{end}}
+  {{if .GenreID}}<input type="hidden" name="g" value="{{.GenreID}}">{{end}}
+  <button class="btn">Найти</button>
+</form>
+{{with .Genre}}<p class="chips"><span class="chip on">Жанр: {{.}} <a href="{{$.NoGenre}}" title="Все жанры" aria-label="Снять отбор по жанру">✕</a></span></p>{{end}}
+<div class="bar">
+  {{if or .Q .GenreID}}<span class="muted">Найдено: {{.Total}} · <a href="{{.AllBook}}">весь каталог</a></span>
+  {{else}}<span class="muted">Изданий {{.Stats.Editions}} · экземпляров {{.Stats.Copies}} · <a href="/genres">жанры</a> · <a href="/people">авторы</a> · <a href="/devices">телефоны</a></span>{{end}}
+  {{if .Rows}}<span class="views">
+    <a href="{{.Tiles}}" class="{{if eq .View "tiles"}}on{{end}}" title="Плиткой">▦</a>
+    <a href="{{.List}}" class="{{if eq .View "list"}}on{{end}}" title="Списком">☰</a>
+  </span>{{end}}
+</div>
+{{if .Rows}}
+{{if eq .View "list"}}
+<ul class="books">
+  {{range .Rows}}
+  <li><a href="/book/{{.ID}}">
+    {{if .Cover}}<img class="thumb" src="/cover/{{.Cover}}" alt="" loading="lazy">{{else}}<span class="thumb none"></span>{{end}}
+    <span class="t">{{.Title}}{{if .Volume}} <span class="vol">{{.Volume}}</span>{{end}}</span>
+    <span class="a">{{.Authors}}</span>
+    <span class="m">{{.Publisher}}{{if .Year}}{{if .Publisher}}, {{end}}{{.Year}}{{end}}</span>
+    {{if .Borrower}}<span class="m lent-line{{if .Overdue}} late{{end}}">📖 на руках: {{.Borrower}}{{if .Overdue}}, срок прошёл{{end}}</span>{{end}}
+    {{if eq .Copies 0}}<span class="tag warn">нет экз.</span>{{else if gt .Copies 1}}<span class="tag">{{.Copies}} экз.</span>{{end}}
+  </a></li>
+  {{end}}
+</ul>
+{{else}}
+<ul class="tiles">
+  {{range .Rows}}
+  <li><a href="/book/{{.ID}}" title="{{.Title}}">
+    {{if .Cover}}<img class="cover" src="/cover/{{.Cover}}" alt="" loading="lazy">
+    {{else}}<span class="cover none"><span>{{.Title}}</span><small>{{.Authors}}</small></span>{{end}}
+    {{if eq .Copies 0}}<span class="tag warn">нет экз.</span>{{else if gt .Copies 1}}<span class="tag">{{.Copies}} экз.</span>{{end}}
+    {{if .Borrower}}<span class="lent{{if .Overdue}} late{{end}}">📖 {{.Borrower}}{{if .Overdue}}, срок прошёл{{end}}</span>{{end}}
+    <span class="t">{{.Title}}{{if .Volume}} <span class="vol">{{.Volume}}</span>{{end}}</span>
+    <span class="a">{{.Authors}}</span>
+  </a></li>
+  {{end}}
+</ul>
+{{end}}
+<div class="pager">
+  {{if gt .Page 1}}<a class="btn ghost" href="{{.Prev}}">← назад</a>{{else}}<span></span>{{end}}
+  {{if .HasNext}}<a class="btn ghost" href="{{.Next}}">дальше →</a>{{end}}
+</div>
+{{else if .Q}}
+<div class="empty">Ничего не нашлось. <a href="/add">Добавить книгу</a></div>
+{{else}}
+<div class="empty">
+  <img src="/static/icon-192.png" alt="" width="120" height="120">
+  <p>Каталог пуст. Добавьте первую книгу вручную или отсканируйте штрихкод.</p>
+  <p><a class="btn" href="/add">+ Книга</a> <a class="btn ghost" href="/scan">📷 Скан</a></p>
+</div>
+{{end}}
+{{end}}

@@ -1,0 +1,14 @@
+{{define "content"}}
+<p><a href="/loans">← На руках</a></p>
+<h1>{{.Name}}</h1>
+{{if .OnHand}}
+<h2>Сейчас на руках</h2>
+{{template "loanlist" (loanlist .OnHand .Today .Back)}}
+{{else}}<p class="muted">Сейчас ничего не держит.</p>{{end}}
+{{with .Returned}}
+<h2>Брал раньше</h2>
+<ul class="past-list">
+  {{range .}}<li><a href="/book/{{.EditionID}}">{{.Title}}</a> — {{date .LentOn}} … {{date .ReturnedOn}}{{if .Note}} · <span class="muted">{{.Note}}</span>{{end}}</li>{{end}}
+</ul>
+{{end}}
+{{end}}

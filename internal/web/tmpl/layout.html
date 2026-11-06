@@ -1,0 +1,31 @@
+{{define "layout"}}<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · Филин</title>
+<link rel="icon" href="/static/icon-32.png">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#4a2f19">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="top">
+  <a href="/" class="brand"><img src="/static/icon-192.png" alt="" width="40" height="40">Филин</a>
+  <nav>
+    <a href="/value" class="btn ghost" title="Ценность библиотеки">💰<span class="lbl"> Ценность</span></a>
+    <a href="/loans" class="btn ghost" title="На руках — книги, отданные почитать">📖<span class="lbl"> На руках</span></a>
+    <a href="/devices" class="btn ghost desk-only" title="Телефоны: поставить приложение и привязать">📱<span class="lbl"> Телефоны</span></a>
+    <a href="/backup" class="btn ghost desk-only" title="Резервная копия: база и фото одним архивом">💾<span class="lbl"> Копия</span></a>
+    <a href="/scan" class="btn ghost" title="Сканер ISBN">📷<span class="lbl"> Скан</span></a>
+    <a href="/add" class="btn" title="Новая книга">+<span class="lbl"> Книга</span></a>
+  </nav>
+</header>
+<main>{{template "content" .}}</main>
+<script>
+// «назад» из карточки достаёт страницу из памяти браузера — с прежними обложками и данными
+addEventListener('pageshow', e => { if (e.persisted) location.reload() })
+</script>
+</body>
+</html>{{end}}

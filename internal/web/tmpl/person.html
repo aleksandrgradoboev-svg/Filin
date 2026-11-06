@@ -1,0 +1,34 @@
+{{define "content"}}
+<p><a href="/people">← Авторы</a></p>
+<article class="card">
+  <h1>{{.P.Name}}{{with .P.Life}} <span class="vol">({{.}})</span>{{end}}</h1>
+  {{with .P.About}}<p class="pre">{{.}}</p>{{end}}
+  {{with .P.Link}}<p><a href="{{.}}" rel="noreferrer" target="_blank">подробнее ↗</a></p>{{end}}
+  <details class="lend" {{if .Edit}}open{{end}}>
+    <summary>{{if or .P.Life .P.About .P.Link}}Править справку{{else}}Добавить справку{{end}}</summary>
+    {{with .Err}}<div class="note err">{{.}}</div>{{end}}
+    <form method="post" action="/person" class="form">
+      <input type="hidden" name="name" value="{{.P.Name}}">
+      <div class="row2">
+        <label>Годы жизни<input name="life" value="{{.P.Life}}" placeholder="1876–1916"></label>
+        <label>Ссылка <span class="hint">Википедия, FantLab</span><input name="link" type="url" value="{{.P.Link}}"></label>
+      </div>
+      <label>О человеке<textarea name="about" rows="4" placeholder="пара строк: кто, чем известен">{{.P.About}}</textarea></label>
+      <p><button class="btn">Сохранить</button></p>
+    </form>
+  </details>
+</article>
+
+<h2>Книги в библиотеке — {{len .Books}}</h2>
+{{$role := ""}}
+{{range .Books}}
+  {{if ne .Role $role}}{{if $role}}</ul>{{end}}{{$role = .Role}}<h3 class="role">{{roletitle .Role}}</h3><ul class="tiles">{{end}}
+  <li><a href="/book/{{.ID}}" title="{{.Title}}">
+    {{if .Cover}}<img class="cover" src="/cover/{{.Cover}}" alt="" loading="lazy">
+    {{else}}<span class="cover none"><span>{{.Title}}</span><small>{{.Authors}}</small></span>{{end}}
+    <span class="t">{{.Title}}{{if .Volume}} <span class="vol">{{.Volume}}</span>{{end}}</span>
+    <span class="a">{{.Publisher}}{{if .Year}}{{if .Publisher}}, {{end}}{{.Year}}{{end}}</span>
+  </a></li>
+{{end}}
+{{if $role}}</ul>{{end}}
+{{end}}

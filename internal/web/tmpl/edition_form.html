@@ -1,0 +1,137 @@
+{{define "content"}}
+<h1>{{if .IsNew}}Новая книга{{else}}Правка издания{{end}}</h1>
+{{if .Errors}}<div class="note err">{{range .Errors}}<div>{{.}}</div>{{end}}</div>{{end}}
+{{if .Matches}}
+<div class="note">
+  <b>С этим ISBN уже есть:</b>
+  <ul>{{range .Matches}}
+    <li><a href="/book/{{.ID}}">{{.Title}}{{if .Volume}} {{.Volume}}{{end}}</a> — {{.Publisher}}{{if .Year}}, {{.Year}}{{end}}
+      <a class="btn small" href="/book/{{.ID}}?copy">это она — ещё экземпляр</a></li>
+  {{end}}</ul>
+  <p class="muted">Издательства используют один ISBN повторно, поэтому решать вам. Другое издание — заполните форму ниже.</p>
+</div>
+{{end}}
+{{if .IsNew}}
+<form method="get" action="/add" class="box rsl-fill">
+  <div class="muted">Заполнить из Российской государственной библиотеки:
+    <a href="https://search.rsl.ru/ru/search#q={{if .ISBNs}}isbn:{{.ISBNs}}{{else}}{{.E.Title}}{{end}}" target="_blank" rel="noreferrer">найти в РГБ ↗</a>,
+    открыть нужную запись и вставить сюда её адрес.</div>
+  <div class="with-btn">
+    <input name="rsl" value="{{.RSL}}" placeholder="https://search.rsl.ru/ru/record/01015228461" aria-label="Ссылка на запись РГБ">
+    {{if .ISBNs}}<input type="hidden" name="isbn" value="{{.ISBNs}}">{{end}}
+    <button class="btn ghost">Заполнить</button>
+  </div>
+  {{with .RSL}}<div class="muted">✅ Заполнено из РГБ — проверьте и дополните.</div>{{end}}
+</form>
+{{end}}
+<form method="post" action="{{.Action}}" class="form" enctype="multipart/form-data">
+  {{with .RSL}}<input type="hidden" name="rsl" value="{{.}}">{{end}}
+  <label>Название *<input name="title" value="{{.E.Title}}" required {{if not .E.Title}}autofocus{{end}}></label>
+  <div class="people-fields">
+    {{range roles}}<label>{{.Label}} <span class="hint">несколько — через запятую</span>
+      <input name="{{.Name}}" value="{{index $.People .Name}}" placeholder="{{.Placeholder}}"></label>{{end}}
+  </div>
+  <div class="row3">
+    <label>Издательство<input name="publisher" value="{{.E.Publisher}}"></label>
+    <label>Город<input name="city" value="{{.E.City}}"></label>
+    <label>Год<input name="year" value="{{.Year}}" inputmode="numeric" maxlength="4"></label>
+  </div>
+  <div class="row2">
+    <label>ISBN <span class="hint">несколько — через запятую</span>
+      <span class="with-btn"><input name="isbns" value="{{.ISBNs}}" inputmode="numeric"><a class="btn ghost" href="/scan" title="Сканировать">📷</a></span></label>
+    <label>Том<input name="volume" value="{{.E.Volume}}" placeholder="т. 3"></label>
+  </div>
+  <div class="row2">
+    <label>Серия <span class="hint">издательская: «Библиотека приключений», «Литературные памятники»</span>
+      <input name="series" value="{{.E.Series}}" list="series-names"></label>
+    <label>№ в серии<input name="series_no" value="{{.E.SeriesNo}}" placeholder="12"></label>
+  </div>
+  <datalist id="series-names">{{range .SeriesNames}}<option value="{{.}}">{{end}}</datalist>
+  <label>Жанры <span class="hint">через запятую; можно несколько</span>
+    <input name="genres" id="genres" value="{{.Genres}}" placeholder="исторический роман, приключения"></label>
+  <div class="chips" aria-label="Жанры, которые уже есть у книг">{{range .AllGenres}}{{if gt .Count 0}}<button type="button" class="chip"
+    onclick="addGenre(this.textContent)">{{.Name}}</button>{{end}}{{end}}
+    <span class="with-btn add-genre"><input id="genre-pick" list="genre-list" placeholder="из справочника…" aria-label="Жанр из справочника">
+      <button type="button" class="btn small ghost" onclick="const p=document.getElementById('genre-pick'); if (p.value.trim()) { addGenre(p.value.trim()); p.value=''; }">добавить</button></span>
+  </div>
+  <datalist id="genre-list">{{range .AllGenres}}<option value="{{.Name}}">{{end}}</datalist>
+
+  <details class="box" {{if or .E.CoverType .E.Format .E.Pages .E.Circulation .E.PrintPrice .E.Printer .E.EditionNote .E.AgeRating .E.Paper .E.Illustrations .E.Design .E.Dimensions .E.Weight}}open{{end}}>
+    <summary>Выходные данные</summary>
+    <div class="form">
+      <div class="row3">
+        <label>Тип обложки<input name="cover_type" value="{{.E.CoverType}}" list="cover-types" placeholder="твёрдая"></label>
+        <label>Формат<input name="format" value="{{.E.Format}}" placeholder="84x108/32 (130x200 мм)"></label>
+        <label>Страниц<input name="pages" value="{{if .E.Pages}}{{.E.Pages}}{{end}}" inputmode="numeric"></label>
+      </div>
+      <div class="row3">
+        <label>Тираж, экз.<input name="circulation" value="{{if .E.Circulation}}{{.E.Circulation}}{{end}}" inputmode="numeric" placeholder="100000"></label>
+        <label>Цена на книге<input name="print_price" value="{{.E.PrintPrice}}" placeholder="1 р. 20 к."></label>
+        <label>Возраст<input name="age_rating" value="{{.E.AgeRating}}" placeholder="12+"></label>
+      </div>
+      <div class="row3">
+        <label>Бумага<input name="paper" value="{{.E.Paper}}" list="papers" placeholder="офсетная"></label>
+        <label>Иллюстрации<input name="illustrations" value="{{.E.Illustrations}}" list="illus" placeholder="чёрно-белые"></label>
+        <label>Оформление<input name="design" value="{{.E.Design}}" placeholder="ляссе, тиснение"></label>
+      </div>
+      <div class="row3">
+        <label>Размеры, мм<input name="dimensions" value="{{.E.Dimensions}}" placeholder="267x211x17"></label>
+        <label>Вес, г<input name="weight" value="{{if .E.Weight}}{{.E.Weight}}{{end}}" inputmode="numeric"></label>
+        <label>Типография<input name="printer" value="{{.E.Printer}}"></label>
+      </div>
+      <label>Издание <span class="hint">как на титуле</span><input name="edition_note" value="{{.E.EditionNote}}" placeholder="2-е изд., испр. и доп."></label>
+    </div>
+  </details>
+  <datalist id="papers"><option value="офсетная"><option value="мелованная"><option value="газетная"><option value="типографская"><option value="писчая"></datalist>
+  <datalist id="illus"><option value="чёрно-белые"><option value="цветные"><option value="цветные и чёрно-белые"><option value="без иллюстраций"></datalist>
+  <datalist id="cover-types"><option value="твёрдая"><option value="мягкая"><option value="твёрдая, суперобложка"><option value="картонная"><option value="ледериновая"><option value="тканевая"></datalist>
+
+  <details class="box" {{if or .E.OrigTitle .E.OrigLanguage .E.Language .E.Annotation .E.Contents}}open{{end}}>
+    <summary>Содержание и перевод</summary>
+    <div class="form">
+      <div class="row3">
+        <label>Название оригинала<input name="orig_title" value="{{.E.OrigTitle}}" placeholder="Ivanhoe"></label>
+        <label>Переведено с<input name="orig_language" value="{{.E.OrigLanguage}}" placeholder="английского"></label>
+        <label>Язык издания <span class="hint">если не русский</span><input name="language" value="{{.E.Language}}"></label>
+      </div>
+      <label>Аннотация<textarea name="annotation" rows="3">{{.E.Annotation}}</textarea></label>
+      <label>Содержание <span class="hint">для сборника — по произведению в строке</span>
+        <textarea name="contents" rows="4">{{.E.Contents}}</textarea></label>
+    </div>
+  </details>
+
+  <details class="box" {{if or .E.BBK .E.UDK .E.AuthorSign}}open{{end}}>
+    <summary>Библиотечные индексы</summary>
+    <div class="row3">
+      <label>ББК<input name="bbk" value="{{.E.BBK}}" placeholder="84(2Рос=Рус)6"></label>
+      <label>УДК<input name="udk" value="{{.E.UDK}}"></label>
+      <label>Авторский знак<input name="author_sign" value="{{.E.AuthorSign}}" placeholder="Б90"></label>
+    </div>
+  </details>
+
+  <div class="cover-field">
+    {{if .E.Cover}}<img src="/cover/{{.E.Cover}}" alt="Обложка">{{end}}
+    <div>
+      <label>Обложка <span class="hint">фото с камеры или файл; необязательно</span>
+        <input type="file" name="cover" accept="image/jpeg,image/png,image/webp"></label>
+      {{if .E.Cover}}<label class="check"><input type="checkbox" name="remove_cover"> убрать обложку</label>{{end}}
+    </div>
+  </div>
+  <label>Заметки<textarea name="notes" rows="2">{{.E.Notes}}</textarea></label>
+  {{if .IsNew}}
+  <fieldset>
+    <legend><label class="check"><input type="checkbox" name="with_copy" {{if .WithCopy}}checked{{end}}> Стоит у меня на полке — завести экземпляр</label></legend>
+    {{template "copyfields" (cf .Shelves .Copy)}}
+  </fieldset>
+  {{end}}
+  <p><button class="btn">Сохранить</button> <a href="{{if .IsNew}}/{{else}}/book/{{.E.ID}}{{end}}">отмена</a></p>
+</form>
+<script>
+// жанр из подсказки дописывается через запятую, если его ещё нет
+function addGenre(name) {
+  const f = document.getElementById('genres');
+  const have = f.value.split(/[,;]/).map(s => s.trim().toLowerCase()).filter(Boolean);
+  if (!have.includes(name.toLowerCase())) f.value = (f.value.trim() ? f.value.trim().replace(/[,;]$/, '') + ', ' : '') + name;
+}
+</script>
+{{end}}

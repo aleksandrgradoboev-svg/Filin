@@ -1,0 +1,19 @@
+{{define "loanlist"}}
+<ul class="loans">
+  {{range .Loans}}
+  <li class="{{if .Overdue $.Today}}overdue{{end}}">
+    <a href="/book/{{.EditionID}}" class="lthumb">{{if .Cover}}<img src="/cover/{{.Cover}}" alt="" loading="lazy">{{else}}<span class="thumb none"></span>{{end}}</a>
+    <div>
+      <a href="/book/{{.EditionID}}"><b>{{.Title}}</b>{{if .Volume}} <span class="vol">{{.Volume}}</span>{{end}}</a>
+      <div><a href="{{who .Borrower}}">{{.Borrower}}</a> · с {{date .LentOn}} · {{days .LentOn $.Today}} дн.
+        {{if .DueOn}}· срок {{date .DueOn}}{{if .Overdue $.Today}} — <b class="late">прошёл</b>{{end}}{{end}}</div>
+      {{if .Note}}<div class="muted">{{.Note}}</div>{{end}}
+    </div>
+    <form method="post" action="/loan/{{.ID}}/return">
+      <input type="hidden" name="back" value="{{$.Back}}">
+      <button class="btn small">Вернули</button>
+    </form>
+  </li>
+  {{end}}
+</ul>
+{{end}}

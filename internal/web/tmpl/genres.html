@@ -1,0 +1,19 @@
+{{define "content"}}
+<h1>Жанры</h1>
+{{if .Tree}}
+<p class="muted">Число — сколько изданий в жанре у вас. Жанр открывает каталог с отбором по нему.
+  {{if not .HasLiveLib}}Справочник жанров LiveLib не загружен: <code>filin import-livelib-genres жанры.mhtml</code>.{{end}}</p>
+<div class="genre-tree">
+  {{range .Tree}}
+  <section class="box">
+    {{if .Name}}<h2><a href="/?g={{.ID}}">{{.Name}}</a>{{if .Count}} <span class="tag">{{.Count}}</span>{{end}}</h2>
+    {{else}}<h2>Свои жанры</h2>{{end}}
+    <p class="chips">{{range .Children}}<a class="chip{{if not .Count}} empty{{end}}" href="/?g={{.ID}}">{{.Name}}{{if .Count}} <b>{{.Count}}</b>{{end}}</a>{{end}}</p>
+  </section>
+  {{end}}
+</div>
+{{else}}
+<div class="empty">Жанров пока нет. Их можно вписать в карточке книги или загрузить справочник LiveLib:
+  сохранить страницу livelib.ru/genres (Ctrl+S, «один файл») и выполнить <code>filin import-livelib-genres файл.mhtml</code>.</div>
+{{end}}
+{{end}}

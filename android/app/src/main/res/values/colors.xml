@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- как в веб-части: пергамент, кожаный переплёт, бирюза сбруи -->
+    <color name="parchment">#EFE0B9</color>
+    <color name="sheet">#F8ECCC</color>
+    <color name="ink">#2E1D0E</color>
+    <color name="muted">#75603F</color>
+    <color name="leather">#4A2F19</color>
+    <color name="accent">#0F6E66</color>
+    <color name="warn">#A8461A</color>
+</resources>
