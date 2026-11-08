@@ -216,9 +216,8 @@ func TestAppDownload(t *testing.T) {
 	}
 }
 
-// Приложение, вшитое в выпуск: человек скачал один filin.exe — QR «поставить приложение»
-// ведёт к APK сразу. Выложенное в папку новее — отдаётся оно, вшитое новее — вшитое.
-func TestBundledApp(t *testing.T) {
+// Приложение — только из папки app: нет его — честное «не выложено», есть — отдаётся то, что там.
+func TestAppFromFolder(t *testing.T) {
 	get := func(a *netApp) (int, string, string) {
 		_, b := a.do(phone, "GET", "/api/app", "", "", nil)
 		var info appInfo
@@ -229,26 +228,16 @@ func TestBundledApp(t *testing.T) {
 		a.h.ServeHTTP(w, r)
 		return info.VersionCode, w.Body.String(), w.Header().Get("Content-Type")
 	}
-	bundled := BundledApp([]byte(`{"version_code": 14, "version_name": "0.6.0"}`), []byte("PK-вшитый"))
-
-	a := newNetApp(t, bundled) // папки app нет вовсе
-	if v, body, ct := get(a); v != 14 || body != "PK-вшитый" || ct != "application/vnd.android.package-archive" {
-		t.Errorf("только вшитое: %d %q %q", v, body, ct)
+	a := newNetApp(t) // папки app нет вовсе
+	if v, _, _ := get(a); v != 0 {
+		t.Errorf("без папки app отдано приложение версии %d", v)
 	}
-
-	publish := func(a *netApp, code int, body string) {
-		app := filepath.Join(a.data, "app")
-		os.MkdirAll(app, 0o755)
-		os.WriteFile(filepath.Join(app, "app.json"), []byte(fmt.Sprintf(`{"version_code": %d}`, code)), 0o644)
-		os.WriteFile(filepath.Join(app, "filin.apk"), []byte(body), 0o644)
-	}
-	publish(a, 15, "PK-выложенный")
-	if v, body, _ := get(a); v != 15 || body != "PK-выложенный" {
-		t.Errorf("выложенное новее: %d %q", v, body)
-	}
-	publish(a, 13, "PK-старый")
-	if v, body, _ := get(a); v != 14 || body != "PK-вшитый" {
-		t.Errorf("вшитое новее выложенного: %d %q", v, body)
+	app := filepath.Join(a.data, "app")
+	os.MkdirAll(app, 0o755)
+	os.WriteFile(filepath.Join(app, "app.json"), []byte(fmt.Sprintf(`{"version_code": %d}`, 17)), 0o644)
+	os.WriteFile(filepath.Join(app, "filin.apk"), []byte("PK-выложенный"), 0o644)
+	if v, body, ct := get(a); v != 17 || body != "PK-выложенный" || ct != "application/vnd.android.package-archive" {
+		t.Errorf("из папки: %d %q %q", v, body, ct)
 	}
 }
 

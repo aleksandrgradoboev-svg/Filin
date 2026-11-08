@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/aleksandrgradoboev-svg/filin/internal/backup"
-	"github.com/aleksandrgradoboev-svg/filin/internal/bundled"
 	"github.com/aleksandrgradoboev-svg/filin/internal/catalog"
 	"github.com/aleksandrgradoboev-svg/filin/internal/desktop"
 	"github.com/aleksandrgradoboev-svg/filin/internal/web"
@@ -50,9 +49,6 @@ func app(d *sql.DB, path, covers string) error {
 	}
 
 	opts := []web.Option{web.OCR(startOCR(filepath.Dir(path))), web.PhoneURLs(phone)}
-	if info, apk, ok := bundled.App(); ok { // выпуск несёт приложение в себе — QR сразу ведёт к нему
-		opts = append(opts, web.BundledApp(info, apk))
-	}
 	// «Дополнить из РГБ» в браузере на этом компьютере — поиск и список «Это она», как на телефоне
 	opts = append(opts, rslSearch()...)
 	h, err := web.New(catalog.New(d), covers, opts...)

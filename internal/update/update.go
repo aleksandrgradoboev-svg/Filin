@@ -41,6 +41,10 @@ type Release struct {
 	SHA256  string // сумма файла, шестнадцатеричная, строчными
 	Size    int64
 	Page    string // страница выпуска — показать человеку, что нового
+
+	// приложение для телефона отдельными файлами выпуска; пусто — их в выпуске нет
+	APK     File // filin.apk — с суммой и размером
+	AppInfo File // app.json — номер версии приложения
 }
 
 // Latest спрашивает последний выпуск. ua — подпись программы: GitHub без неё отказывает.
@@ -75,6 +79,17 @@ func Latest(ctx context.Context, c *http.Client, url, ua string) (Release, error
 	if _, ok := parse(r.Tag); !ok {
 		return Release{}, fmt.Errorf("у выпуска непонятная версия %q", r.Tag)
 	}
+	var apk, info File
+	for _, a := range r.Assets {
+		switch a.Name {
+		case AppAPK:
+			if sum, ok := strings.CutPrefix(a.Digest, "sha256:"); ok && len(sum) == sha256.Size*2 && a.Size > 0 && a.Size <= maxSize {
+				apk = File{URL: a.URL, SHA256: strings.ToLower(sum), Size: a.Size}
+			}
+		case AppInfo:
+			info = File{URL: a.URL, Size: a.Size}
+		}
+	}
 	for _, a := range r.Assets {
 		if a.Name != Asset {
 			continue
@@ -87,7 +102,8 @@ func Latest(ctx context.Context, c *http.Client, url, ua string) (Release, error
 		if a.Size <= 0 || a.Size > maxSize {
 			return Release{}, fmt.Errorf("у %s в выпуске %s странный размер: %d", Asset, r.Tag, a.Size)
 		}
-		return Release{Version: r.Tag, URL: a.URL, SHA256: strings.ToLower(sum), Size: a.Size, Page: r.Page}, nil
+		return Release{Version: r.Tag, URL: a.URL, SHA256: strings.ToLower(sum), Size: a.Size, Page: r.Page,
+			APK: apk, AppInfo: info}, nil
 	}
 	return Release{}, fmt.Errorf("в выпуске %s нет %s", r.Tag, Asset)
 }

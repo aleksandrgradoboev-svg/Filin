@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -43,7 +44,8 @@ const keepCopies = 2
 // заменой делает копию библиотеки (новая версия может перестроить базу, и вернуться назад
 // можно будет только из копии), потом закрывает Филина и запускает новый.
 type updater struct {
-	busy atomic.Bool // идёт проверка или обновление
+	busy    atomic.Bool // идёт проверка или обновление
+	appBusy atomic.Bool // докачивается приложение для телефона
 
 	// mu охраняет closing и начало замены: Add после начала Wait — гонка, поэтому замена
 	// начинается только под mu и только пока программа не закрывается
@@ -110,6 +112,9 @@ func (u *updater) check(manual bool) {
 		say("не удалось узнать последнюю версию: " + err.Error())
 		return
 	}
+	// приложение для телефона — отдельно от программы и в фоне: новое в выпуске — докачать
+	// в каталог приложения, откуда его возьмёт телефон
+	go u.syncApp(rel, ua)
 	if !update.Newer(version, rel.Version) {
 		say("стоит последняя версия, " + version + ".")
 		return
@@ -157,6 +162,26 @@ func (u *updater) check(manual bool) {
 	restartExe.Store(exe)
 	u.quit()
 }
+
+// syncApp кладёт в каталог приложения (<данные>/app) приложение для телефона из выпуска,
+// если там оно новее. Одновременно — одно; оборвалось — докачается при следующей проверке.
+func (u *updater) syncApp(rel update.Release, ua string) {
+	if !u.appBusy.CompareAndSwap(false, true) {
+		return
+	}
+	defer u.appBusy.Store(false)
+	dir := filepath.Join(filepath.Dir(u.path), "app")
+	before, _ := os.ReadFile(filepath.Join(dir, update.AppInfo))
+	got, err := update.SyncApp(context.Background(), http.DefaultClient, rel, dir, ua)
+	switch {
+	case err != nil:
+		log.Printf("приложение для телефона из %s: %v", rel.Version, err)
+	case got > 0 && !bytes.Equal(before, mustRead(filepath.Join(dir, update.AppInfo))):
+		log.Printf("приложение для телефона обновлено из %s: версия %d — телефон предложит его сам", rel.Version, got)
+	}
+}
+
+func mustRead(p string) []byte { b, _ := os.ReadFile(p); return b }
 
 // close — программа закрывается: новых замен не начинать, начатую дождаться. Иначе выход
 // мог бы прийтись между двумя переименованиями, и filin.exe не осталось бы вовсе.
