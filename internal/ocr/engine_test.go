@@ -9,6 +9,7 @@ import (
 	"image/jpeg"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,69 @@ import (
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 )
+
+// Вывод определителя ориентации: верим только уверенному, поворот — в четвертях по часовой.
+func TestParseOSD(t *testing.T) {
+	osd := func(rot, conf string) string {
+		return "Page number: 0\r\nOrientation in degrees: 0\r\nRotate: " + rot + "\r\nOrientation confidence: " + conf + "\r\nScript: Cyrillic\r\n"
+	}
+	for _, c := range []struct {
+		out  string
+		want int
+	}{
+		{osd("180", "6.40"), 2}, {osd("90", "9.45"), 1}, {osd("270", "3.1"), 3}, {osd("0", "12.8"), 0},
+		{osd("180", "0.23"), 0}, // не уверен — так он «видел арабское письмо» на мелком шрифте в тени
+		{"", 0}, {"Too few characters. Skipping this page", 0},
+	} {
+		if got := parseOSD(c.out); got != c.want {
+			t.Errorf("parseOSD(%q) = %d, ждали %d", c.out, got, c.want)
+		}
+	}
+}
+
+func TestRotate(t *testing.T) {
+	g := image.NewGray(image.Rect(0, 0, 3, 2)) // 3×2: левый верхний пиксель отмечен
+	g.SetGray(0, 0, color.Gray{Y: 255})
+	for _, c := range []struct {
+		q    int
+		w, h int
+		x, y int // куда ушёл отмеченный пиксель
+	}{{0, 3, 2, 0, 0}, {1, 2, 3, 1, 0}, {2, 3, 2, 2, 1}, {3, 2, 3, 0, 2}} {
+		r := rotate(g, c.q)
+		if r.Bounds().Dx() != c.w || r.Bounds().Dy() != c.h || r.GrayAt(c.x, c.y).Y != 255 {
+			t.Errorf("поворот на %d четвертей: %v, отметка в (%d,%d) = %d", c.q, r.Bounds(), c.x, c.y, r.GrayAt(c.x, c.y).Y)
+		}
+	}
+}
+
+// Оценка прохода: уверенно прочитанные знаки, а годный ISBN в любой строке перевешивает
+// пару лишних слов; мусор с низкой уверенностью не считается.
+func TestScore(t *testing.T) {
+	row := func(line int, text string, conf int) string {
+		var b strings.Builder
+		for i, w := range strings.Fields(text) {
+			b.WriteString("5\t1\t1\t1\t" + strconv.Itoa(line) + "\t" + strconv.Itoa(i+1) + "\t" + strconv.Itoa(100*i) + "\t" +
+				strconv.Itoa(100*line) + "\t90\t40\t" + strconv.Itoa(conf) + "\t" + w + "\n")
+		}
+		return b.String()
+	}
+	head := "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
+	plain := []byte(head + row(1, "Степкин Онтарио", 90) + row(2, "мусор", 20))
+	if got := score(plain); got != len([]rune("СтепкинОнтарио")) {
+		t.Errorf("без ISBN: %d", got)
+	}
+	withISBN := []byte(head + row(1, "15Вжх 978-5-600-01715-3 удк 94:355:359", 70))
+	badISBN := []byte(head + row(1, "15Вжх 978-5-600-01715-4 удк 94:355:359", 70))
+	if score(withISBN)-score(badISBN) != isbnWeight {
+		t.Errorf("годный ISBN внутри строки не засчитан: %d против %d", score(withISBN), score(badISBN))
+	}
+	// 10 цифр засчитываются только с подписью «ISBN»: без неё это скорее индекс издания
+	labeled := []byte(head + row(1, "ISBN 5-250-02008-9", 70))
+	bare := []byte(head + row(1, "5-250-02008-9", 70))
+	if got := score(labeled) - score(bare); got != isbnWeight+len("ISBN") {
+		t.Errorf("ISBN-10: с подписью %d, без %d", score(labeled), score(bare))
+	}
+}
 
 // Сквозная проверка с настоящим Tesseract: титул рисуется шрифтом системы, распознаётся
 // и раскладывается по полям. Нужны программа (FILIN_TESSERACT — путь к ней) и шрифт
