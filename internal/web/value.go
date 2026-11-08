@@ -10,8 +10,8 @@ import (
 	"github.com/aleksandrgradoboev-svg/filin/internal/catalog"
 )
 
-// rub показывает сумму с пробелами между разрядами: 12 500 ₽.
-func rub(n int) string {
+// digits — число с узкими неразрывными пробелами между разрядами: 12 500.
+func digits(n int) string {
 	s := strconv.Itoa(n)
 	var b strings.Builder
 	for i, c := range s {
@@ -20,8 +20,13 @@ func rub(n int) string {
 		}
 		b.WriteRune(c)
 	}
-	return b.String() + string(rune(0x00A0)) + "₽"
+	return b.String()
 }
+
+const nbsp = " "
+
+// rub показывает сумму: 12 500 ₽.
+func rub(n int) string { return digits(n) + nbsp + "₽" }
 
 var (
 	reRubKop   = regexp.MustCompile(`^(\d+)(?:[.,]\d{1,2})?$`)        // 1500, 1500,50 — копейки отбрасываем
@@ -45,6 +50,31 @@ func parseRub(s string) (int, error) {
 	return strconv.Atoi(s)
 }
 
+// price — оценка для показа: «1 500 ₽» или диапазон «170 – 450 ₽».
+func price(from, to int) string {
+	if to <= from {
+		return rub(from)
+	}
+	return digits(from) + nbsp + "–" + nbsp + rub(to)
+}
+
+// valuationForm — оценка из формы: сумма «от» обязательна, «до» — по желанию. Вторым
+// значением — что сказать человеку, если форма заполнена не так.
+func valuationForm(r *http.Request, copyID int64) (catalog.Valuation, string) {
+	amount, err := parseRub(r.FormValue("amount"))
+	if err != nil {
+		return catalog.Valuation{}, "сумма — число рублей, например 1500"
+	}
+	var to int
+	if s := strings.TrimSpace(r.FormValue("amount_to")); s != "" {
+		if to, err = parseRub(s); err != nil {
+			return catalog.Valuation{}, "«до» — число рублей, например 2500, или пусто"
+		}
+	}
+	return catalog.Valuation{CopyID: copyID, Amount: amount, AmountTo: to, ValuedOn: r.FormValue("valued_on"),
+		Basis: r.FormValue("basis"), SourceURL: r.FormValue("source_url")}, ""
+}
+
 func (s *server) addValuation(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -59,13 +89,11 @@ func (s *server) addValuation(w http.ResponseWriter, r *http.Request) {
 	retry := func(msg string) {
 		s.renderBook(w, bookPage{E: catalog.Edition{ID: c.EditionID}, ValueErr: msg, ValueCopy: id})
 	}
-	amount, err := parseRub(r.FormValue("amount"))
-	if err != nil {
-		retry("сумма — число рублей, например 1500")
+	v, msg := valuationForm(r, id)
+	if msg != "" {
+		retry(msg)
 		return
 	}
-	v := catalog.Valuation{CopyID: id, Amount: amount, ValuedOn: r.FormValue("valued_on"),
-		Basis: r.FormValue("basis"), SourceURL: r.FormValue("source_url")}
 	if _, err := s.st.AddValuation(&v); err != nil {
 		if catalog.IsInput(err) {
 			retry(err.Error())

@@ -70,6 +70,7 @@ func New(st *catalog.Store, covers string, opts ...Option) (http.Handler, error)
 		"days":      daysSince,
 		"loanlist":  newLoanListData,
 		"rub":       rub,
+		"price":     price,
 		"grade":     catalog.GradeName,
 		"grades":    func() []string { return catalog.Grades },
 	}
@@ -101,6 +102,7 @@ func New(st *catalog.Store, covers string, opts ...Option) (http.Handler, error)
 	mux.HandleFunc("POST /book/{id}/edit", s.edit)
 	mux.HandleFunc("GET /book/{id}/alib", s.alibForm)
 	mux.HandleFunc("POST /book/{id}/alib", s.alibTake)
+	mux.HandleFunc("POST /book/{id}/alib/value", s.alibValue)
 	mux.HandleFunc("POST /book/{id}/copy", s.addCopy)
 	mux.HandleFunc("GET /copy/{id}/edit", s.copyForm)
 	mux.HandleFunc("POST /copy/{id}/edit", s.editCopy)

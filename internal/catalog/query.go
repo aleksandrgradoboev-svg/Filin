@@ -269,7 +269,7 @@ func (s *Store) copies(where string, arg any) ([]ShelvedCopy, error) {
 			COALESCE(sh.room, ''), COALESCE(sh.bookcase, ''), COALESCE(sh.shelf, ''),
 			COALESCE(l.id, 0), COALESCE(l.borrower, ''), COALESCE(l.lent_on, ''), COALESCE(l.due_on, ''),
 			COALESCE(l.note, ''),
-			COALESCE(v.id, 0), COALESCE(v.amount, 0), COALESCE(v.valued_on, ''), COALESCE(v.basis, ''),
+			COALESCE(v.id, 0), COALESCE(v.amount, 0), COALESCE(v.amount_to, 0), COALESCE(v.valued_on, ''), COALESCE(v.basis, ''),
 			COALESCE(v.source_url, '')
 		FROM book_copy c LEFT JOIN shelf sh ON sh.id = c.shelf_id
 		LEFT JOIN loan l ON l.copy_id = c.id AND l.returned_on IS NULL
@@ -288,7 +288,7 @@ func (s *Store) copies(where string, arg any) ([]ShelvedCopy, error) {
 			&c.Inscriptions, &c.History, &c.NoLend, &c.Notes, &c.Grade, &c.Cherished, &c.Read,
 			&c.Room, &c.Bookcase, &c.Shelf,
 			&l.ID, &l.Borrower, &l.LentOn, &l.DueOn, &l.Note,
-			&v.ID, &v.Amount, &v.ValuedOn, &v.Basis, &v.SourceURL); err != nil {
+			&v.ID, &v.Amount, &v.AmountTo, &v.ValuedOn, &v.Basis, &v.SourceURL); err != nil {
 			return nil, err
 		}
 		if l.ID != 0 {
