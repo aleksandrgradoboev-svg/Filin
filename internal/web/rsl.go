@@ -41,30 +41,47 @@ func rslQuery(e catalog.Edition) (q, fallback string) {
 	}
 	title, _, _ := strings.Cut(e.Title, ":")
 	words := strings.Fields(reQuoteMarks.ReplaceAllString(title, " "))
-	var surname string
+	var author string
 	for _, p := range e.People {
 		if p.Role != "author" {
 			continue
 		}
-		first, _, _ := strings.Cut(p.Name, ",")
-		for _, w := range reSpaces.Split(strings.TrimSpace(first), -1) {
-			if w != "" && !strings.Contains(w, ".") && len([]rune(w)) > len([]rune(surname)) {
-				surname = w
-			}
-		}
+		author = rslAuthor(p.Name)
 		break
 	}
 	var parts []string
 	if len(words) > 0 {
 		parts = append(parts, "title:("+strings.Join(words, " ")+")")
 	}
-	if surname != "" {
-		parts = append(parts, "author:"+surname)
+	if author != "" {
+		parts = append(parts, author)
 		if len(words) > 0 {
-			fallback = "author:" + surname
+			fallback = author
 		}
 	}
 	return strings.Join(parts, " "), fallback
+}
+
+// rslAuthor — автор для запроса РГБ: все слова имени, кроме инициалов, — РГБ ищет запись,
+// где есть каждое. Раньше бралось одно самое длинное слово, и «Густав Эмар» искался как
+// «Густав» — первым шёл Густав Малер. Порядок слов не важен: у РГБ «Эмар, Густав»,
+// «Рид, Томас Майн». «Хастингс М.» — author:Хастингс.
+func rslAuthor(name string) string {
+	first, _, _ := strings.Cut(name, ",")
+	var ws []string
+	for _, w := range reSpaces.Split(strings.TrimSpace(first), -1) {
+		w = strings.Trim(w, "«»\"()[]")
+		if len([]rune(w)) > 1 && !strings.Contains(w, ".") {
+			ws = append(ws, w)
+		}
+	}
+	switch len(ws) {
+	case 0:
+		return ""
+	case 1:
+		return "author:" + ws[0]
+	}
+	return "author:(" + strings.Join(ws, " ") + ")"
 }
 
 // rslPageBase — страница поиска РГБ; запрос и фильтры — в части адреса после «#».
@@ -92,8 +109,9 @@ func rslYear(y int) int {
 
 // rslAttempts — по чему искать в РГБ, по порядку, до первой непустой выдачи. Год сужает выдачу
 // в десятки раз («Оцеола» Майн Рида: 680 записей без года), поэтому сначала с ним:
-// название + автор + год, автор + год (название могло распознаться с ошибкой), без года (год
-// мог прочитаться не тот), только автор. ISBN — один запрос, точнее него ничего нет.
+// название + автор + год, автор + год (название могло распознаться с ошибкой), название +
+// автор без года (год мог прочитаться не тот). Только автора без года не ищем. ISBN — один
+// запрос, точнее него ничего нет.
 // isbns — номера из поля формы новой книги (со сканера), в карточке их ещё нет.
 func rslAttempts(e catalog.Edition, isbns string) []string {
 	if good, _ := catalog.ParseISBNs(isbns); len(good) > 0 && good[0].Valid {
@@ -121,7 +139,8 @@ func rslAttempts(e catalog.Edition, isbns string) []string {
 		add(fb, y)
 	}
 	add(q, 0)
-	add(fb, 0)
+	// «только автор» без года — нет: у популярного автора там сотни книг, в выдаче утонешь;
+	// лучше честное «не нашлось» (решение 08.11)
 	return out
 }
 

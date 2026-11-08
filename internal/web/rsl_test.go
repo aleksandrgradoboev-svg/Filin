@@ -208,7 +208,12 @@ func TestRSLQuery(t *testing.T) {
 			People: []catalog.Person{{Name: "Федотов Е. М.", Role: "translator"}, {Name: "Хастингс М.", Role: "author"}}},
 			"title:(Операция Оверлорд) author:Хастингс", "author:Хастингс"},
 		{catalog.Edition{Title: "Шахматы"}, "title:(Шахматы)", ""},
-		{catalog.Edition{Title: "", People: []catalog.Person{{Name: "Риджуэй Мэтью", Role: "author"}}}, "author:Риджуэй", ""},
+		{catalog.Edition{Title: "", People: []catalog.Person{{Name: "Риджуэй Мэтью", Role: "author"}}}, "author:(Риджуэй Мэтью)", ""},
+		// все слова имени, а не самое длинное: «Густав» искал Густава Малера и звукозаписи
+		{catalog.Edition{Title: "Твердая рука", People: []catalog.Person{{Name: "Густав Эмар", Role: "author"}}},
+			"title:(Твердая рука) author:(Густав Эмар)", "author:(Густав Эмар)"},
+		{catalog.Edition{Title: "Талейран", People: []catalog.Person{{Name: "Тарле Е. В.", Role: "author"}}},
+			"title:(Талейран) author:Тарле", "author:Тарле"},
 	} {
 		q, fb := rslQuery(c.e)
 		if q != c.q || fb != c.fb {
@@ -227,7 +232,7 @@ func TestRSLAttempts(t *testing.T) {
 		"yf=1983&yt=1983&q=" + strings.ReplaceAll(url.QueryEscape("title:(Оцеола, вождь семинолов) author:Рид"), "+", "%20"),
 		"yf=1983&yt=1983&q=" + strings.ReplaceAll(url.QueryEscape("author:Рид"), "+", "%20"),
 		"q=" + strings.ReplaceAll(url.QueryEscape("title:(Оцеола, вождь семинолов) author:Рид"), "+", "%20"),
-		"q=" + strings.ReplaceAll(url.QueryEscape("author:Рид"), "+", "%20"),
+		// «только автор» без года не ищем: у популярного автора — сотни книг
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("попытки:\n%s\nждали:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -281,14 +286,14 @@ func TestRSLSearchList(t *testing.T) {
 		return s
 	}
 
-	// с компьютера: страница «Ищу в РГБ», поиск по запросу из карточки (не из адреса) с запасным по автору
+	// с компьютера: страница «Ищу в РГБ», поиск по запросу из карточки (не из адреса)
 	code, b := a.do(local, "GET", book+"/rsl?q=подмена", "", "", nil)
 	if code != http.StatusOK || !strings.Contains(html.UnescapeString(string(b)), "Ищу в РГБ") {
 		t.Fatalf("страница поиска: %d", code)
 	}
 	c := <-calls
-	want := "https://search.rsl.ru/ru/search#q=" + strings.ReplaceAll(url.QueryEscape("title:(Водители фрегатов) author:Чуковский"), "+", "%20")
-	if c.page != want || len(c.next) != 1 || c.next[0] != rslFragment("author:Чуковский", 0) {
+	want := "https://search.rsl.ru/ru/search#q=" + strings.ReplaceAll(url.QueryEscape("title:(Водители фрегатов) author:(Николай Чуковский)"), "+", "%20")
+	if c.page != want || len(c.next) != 0 { // года нет — одна попытка: «только автор» без года не ищем
 		t.Errorf("поиск: %q / %q", c.page, c.next)
 	}
 	// второе нажатие, пока ищем, второго поиска не запускает
