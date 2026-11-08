@@ -42,10 +42,15 @@ type RSLResults struct {
 }
 
 // rslReader — тот же разбор выдачи, что у телефона (RslActivity.READ_RESULTS) и тот же порядок:
-// каждые полсекунды до 20 секунд; пусто по основному запросу — запасной (только автор), при этом
-// прежняя строка «Результатов: …» ещё висит и не считается.
+// каждые полсекунды до 20 секунд; пусто — следующая попытка из списка next (части адреса после
+// «#»: год, запрос — rslAttempts в web), при этом прежняя строка «Результатов: …» ещё висит
+// и не считается. query в ответе — запрос той попытки, что нашла, с годом, если он был.
 const rslReader = `(function(){
-  var fallback = %s, stale = null, polls = 0, current = decodeURIComponent(location.hash.replace(/^#q=/, ''));
+  var next = %s, stale = null, polls = 0;
+  function describe(h){ var p={}; h.replace(/^#/,'').split('&').forEach(function(kv){ var i=kv.indexOf('=');
+      if(i>0) p[kv.slice(0,i)]=decodeURIComponent(kv.slice(i+1)); });
+    return (p.q||'') + (p.yf ? ', ' + p.yf + ' г.' : ''); }
+  var current = describe(location.hash);
   function read(){ var info=document.querySelector('.rsl-search-info');
     var items=[].slice.call(document.querySelectorAll('.search-item')).map(function(e){
       var m=e.querySelector('.js-item-maininfo'), a=e.querySelector('.js-item-authorinfo');
@@ -54,8 +59,8 @@ const rslReader = `(function(){
     return {done:!!info, info:info?info.innerText.trim():'', items:items}; }
   function tick(){ var r=read();
     if (r.done && r.info !== stale) {
-      if (r.items.length===0 && fallback && current!==fallback) { stale=r.info; current=fallback; polls=0;
-        location.hash='#q='+encodeURIComponent(fallback); setTimeout(tick,500); return; }
+      if (r.items.length===0 && next.length>0) { var h=next.shift(); stale=r.info; current=describe('#'+h); polls=0;
+        location.hash='#'+h; setTimeout(tick,500); return; }
       r.query=current; window.filinResults(JSON.stringify(r)); return; }
     if (++polls < 40) setTimeout(tick, 500); else window.filinResults('{"timeout":true}');
   }
@@ -84,12 +89,13 @@ var rslDataDir = func() string {
 // крутилась бы вечно, а флаг «поиск идёт» не снимался бы до перезапуска Филина.
 var rslTimeout = 60 * time.Second
 
-// SearchRSL ищет в РГБ невидимым браузером: pageURL — страница поиска с запросом, fallback —
-// запасной запрос, если по основному пусто. Возвращает выдачу для списка «Это она».
+// SearchRSL ищет в РГБ невидимым браузером: pageURL — страница поиска с первой попыткой, next —
+// следующие попытки по порядку (части адреса после «#»), если выдача пуста. Возвращает выдачу
+// для списка «Это она».
 //
 // Известный риск: при сбое настроек WebView2 библиотека go-webview2 зовёт log.Fatal и
 // завершает весь процесс. Снаружи это не перехватить; на исправной Windows 10/11 не случается.
-func SearchRSL(pageURL, fallback string) (RSLResults, error) {
+func SearchRSL(pageURL string, next []string) (RSLResults, error) {
 	if !strings.HasPrefix(pageURL, "https://search.rsl.ru/") {
 		return RSLResults{}, errors.New("поиск открывает только сайт РГБ")
 	}
@@ -128,8 +134,11 @@ func SearchRSL(pageURL, fallback string) (RSLResults, error) {
 			done <- result{err: err}
 			return
 		}
-		fb, _ := json.Marshal(fallback)
-		w.Init(fmt.Sprintf(rslReader, fb))
+		if next == nil {
+			next = []string{}
+		}
+		nx, _ := json.Marshal(next)
+		w.Init(fmt.Sprintf(rslReader, nx))
 		w.Navigate(pageURL)
 		// страховка: страница не загрузилась и скрипт так и не ответил — не висеть вечно
 		stop := time.AfterFunc(40*time.Second, func() { w.Dispatch(func() { w.Terminate() }) })

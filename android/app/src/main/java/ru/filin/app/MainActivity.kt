@@ -109,7 +109,8 @@ class MainActivity : ComponentActivity() {
         if (q.isBlank()) return false // искать нечего — пусть сервер покажет форму со ссылкой
         fillBook = id
         pickRecord.launch(Intent(this, RslActivity::class.java).putExtra(RslActivity.EXTRA_QUERY, q)
-            .putExtra(RslActivity.EXTRA_FALLBACK, url.getQueryParameter("fallback").orEmpty()))
+            .putExtra(RslActivity.EXTRA_FALLBACK, url.getQueryParameter("fallback").orEmpty())
+            .putExtra(RslActivity.EXTRA_YEAR, url.getQueryParameter("year")?.toIntOrNull() ?: 0))
         return true
     }
 

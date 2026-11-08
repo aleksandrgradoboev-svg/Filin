@@ -20,6 +20,6 @@ type RSLResults struct {
 	Items []RSLFound `json:"items"`
 }
 
-func SearchRSL(pageURL, fallback string) (RSLResults, error) {
+func SearchRSL(pageURL string, next []string) (RSLResults, error) {
 	return RSLResults{}, errors.New("поиск РГБ из Филина есть только в Windows — найдите запись в браузере и вставьте ссылку")
 }

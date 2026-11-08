@@ -19,8 +19,8 @@ android {
         applicationId = "ru.filin.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "0.8.0"
+        versionCode = 17
+        versionName = "0.8.1"
         // модель распознавания штрихкодов — родной код под каждый процессор; телефонам нужны только ARM,
         // x86 — для эмуляторов, и он вдвое раздувает APK
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }

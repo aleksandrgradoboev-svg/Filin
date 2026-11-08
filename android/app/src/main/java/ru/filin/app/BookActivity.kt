@@ -192,7 +192,10 @@ class BookActivity : ComponentActivity() {
             // по названию и автору пусто — распознавание могло испортить название; тогда всё по автору
             val fallback = if (isbn.isEmpty() && words.isNotEmpty() && byAuthor.isNotEmpty()) byAuthor else ""
             pickRecord.launch(Intent(this, RslActivity::class.java).putExtra(RslActivity.EXTRA_QUERY, q)
-                .putExtra(RslActivity.EXTRA_FALLBACK, fallback))
+                .putExtra(RslActivity.EXTRA_FALLBACK, fallback)
+                // год с титула или из формы — самый сильный фильтр поиска (издательство в РГБ
+                // записано как попало, а год печатается цифрами и читается надёжно)
+                .putExtra(RslActivity.EXTRA_YEAR, year.text.toString().trim().toIntOrNull() ?: 0))
         })
         card.addView(fromRsl)
         card.addView(rslErr)
