@@ -32,6 +32,18 @@ func (s *Store) Search(q string, limit, offset int) (rows []Row, total int, err 
 
 // SearchIn — то же, что Search, но только в жанре genreID (0 — во всех).
 func (s *Store) SearchIn(q string, genreID int64, limit, offset int) (rows []Row, total int, err error) {
+	return s.SearchBy(q, Filter{GenreID: genreID}, limit, offset)
+}
+
+// Filter — отбор каталога поверх запроса: жанр и уровень темы; нулевые поля — без отбора.
+type Filter struct {
+	GenreID int64
+	Subject string // уровень темы целиком, на любой глубине цепочки: «СССР», «Воспоминания»
+}
+
+// SearchBy — Search с отбором по жанру и теме.
+func (s *Store) SearchBy(q string, f Filter, limit, offset int) (rows []Row, total int, err error) {
+	genreID := f.GenreID
 	var conds []string
 	var args []any
 	for _, w := range strings.Fields(db.Fold(q)) {
@@ -51,6 +63,10 @@ func (s *Store) SearchIn(q string, genreID int64, limit, offset int) (rows []Row
 		match = "(" + match + ") AND e.id IN (SELECT edition_id FROM edition_genre WHERE genre_id = ?)"
 		args = append(args, genreID)
 	}
+	if sub := strings.Join(strings.Fields(f.Subject), " "); sub != "" {
+		match = "(" + match + ") AND " + subjectMatch
+		args = append(args, sub)
+	}
 	args = append(args, limit, offset)
 	r, err := s.db.Query(`WITH e AS (
 			SELECT e.*, fold(e.title || ' ' || COALESCE(
@@ -60,6 +76,8 @@ func (s *Store) SearchIn(q string, genreID int64, limit, offset int) (rows []Row
 					WHERE se.edition_id = e.id), '')
 				|| ' ' || COALESCE((SELECT group_concat(g.name, ' ') FROM edition_genre eg
 					JOIN genre g ON g.id = eg.genre_id WHERE eg.edition_id = e.id), '')
+				|| ' ' || COALESCE((SELECT group_concat(t.path, ' ') FROM edition_subject t
+					WHERE t.edition_id = e.id), '')
 				|| ' ' || e.orig_title) AS hay
 			FROM edition e)
 		SELECT e.id, e.title, e.publisher, COALESCE(e.year, 0), e.volume, e.cover_path,
@@ -124,6 +142,9 @@ func (s *Store) Edition(id int64) (Edition, error) {
 	}
 	for _, g := range gs {
 		e.Genres = append(e.Genres, g.Name)
+	}
+	if e.Subjects, err = s.editionSubjects(id); err != nil {
+		return e, err
 	}
 
 	rows, err := s.db.Query(`SELECT name, role FROM edition_person WHERE edition_id = ? ORDER BY position`, id)

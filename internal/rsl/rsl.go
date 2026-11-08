@@ -380,7 +380,28 @@ func ToCard(r Record, id string) Card {
 	if f, ok := r.first("505"); ok {
 		e.Contents = contents(f)
 	}
+	e.Subjects = subjects(r)
 	return c
+}
+
+// subjects — тематические рубрики (650 — тема, 651 — место) цепочками уровней через « -- ».
+// У РГБ рубрика ББК записана целиком в $a; рубрика, разложенная по подполям ($x тема,
+// $y время, $z место, $v вид), собирается в ту же цепочку.
+func subjects(r Record) []string {
+	var raw []string
+	for _, tag := range []string{"650", "651"} {
+		for _, f := range r[tag] {
+			var parts []string
+			for _, s := range f.Subs {
+				switch s[0] {
+				case "a", "x", "y", "z", "v":
+					parts = append(parts, s[1])
+				}
+			}
+			raw = append(raw, strings.Join(parts, " -- "))
+		}
+	}
+	return catalog.ParseSubjects(strings.Join(raw, "\n"))
 }
 
 // contents — содержание из 505: одной строкой в $a («Айвенго -- Примечания») или

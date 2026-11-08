@@ -58,6 +58,8 @@
       <button type="button" class="btn small ghost" onclick="const p=document.getElementById('genre-pick'); if (p.value.trim()) { addGenre(p.value.trim()); p.value=''; }">добавить</button></span>
   </div>
   <datalist id="genre-list">{{range .AllGenres}}<option value="{{.Name}}">{{end}}</datalist>
+  <label>Темы <span class="hint">о чём книга: по теме в строке, от общего к частному через «--»</span>
+    <textarea name="subjects" rows="{{if .E.Subjects}}{{add (len .E.Subjects) 1}}{{else}}2{{end}}" placeholder="История -- СССР -- Гражданская война (1918-1920)">{{join .E.Subjects "\n"}}</textarea></label>
 
   <details class="box" {{if or .E.CoverType .E.Format .E.Pages .E.Circulation .E.PrintPrice .E.Printer .E.EditionNote .E.AgeRating .E.Paper .E.Illustrations .E.Design .E.Dimensions .E.Weight}}open{{end}}>
     <summary>Выходные данные</summary>

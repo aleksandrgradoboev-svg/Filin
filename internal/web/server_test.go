@@ -67,6 +67,7 @@ func TestFullCardThroughForm(t *testing.T) {
 		"edition_note": {"Подарочное издание"}, "orig_title": {"White Fang"}, "orig_language": {"английского"},
 		"language": {"русский"}, "annotation": {"Волк-собака на Аляске."}, "contents": {"Белый Клык\nПримечания"},
 		"bbk": {"84(7Сое)"}, "udk": {"821.111(73)"}, "author_sign": {"Л76"}, "notes": {"подарок"},
+		"subjects": {"Литература -- США -- Аляска"},
 	}
 	r, err := noRedirect().PostForm(srv.URL+"/add", form)
 	if err != nil {
@@ -92,6 +93,9 @@ func TestFullCardThroughForm(t *testing.T) {
 		// переводы строк в textarea сохраняются как есть
 		if !strings.Contains(edit, want) {
 			t.Errorf("поле %q: %q не вернулось в форму правки", name, want)
+		}
+		if name == "subjects" { // в карточке тема — цепочкой ссылок по уровням
+			want = `<a href="/?t=%D0%90%D0%BB%D1%8F%D1%81%D0%BA%D0%B0">Аляска</a>`
 		}
 		if !strings.Contains(card, want) {
 			t.Errorf("поле %q: %q не видно в карточке", name, want)
