@@ -3,6 +3,7 @@ package ocr
 import (
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -105,6 +106,83 @@ func TestRoleNamesSurnameFirst(t *testing.T) {
 	people, _ = roleNames("Редактор РИМСКИЙ-КОРСАКОВ Н. А.")
 	if len(people) != 1 || people[0].Name != "Римский-Корсаков Н. А." {
 		t.Errorf("капс с дефисом: %+v", people)
+	}
+}
+
+// Оборот «Талейрана» Тарле (Республика, 1993), снятый перевёрнутым телефоном: таблица — от
+// прохода, развёрнутого на 180°. Tesseract читает «ISBN» как «15ВХ», «.— М.:» как «--- М.:»,
+// знак «Т20» как «т20», «317 с.» как «317 е.»; раньше страница принималась за титул, и ББК,
+// знак и аннотация терялись. Ожидаемое списано с фотографии.
+func TestRealCardMisreadMarks(t *testing.T) {
+	d := probe(t, "tarle-card-upside-down.tsv")
+	if d.Kind != KindCard {
+		t.Fatalf("карточка не узнана: %q", d.Kind)
+	}
+	check := func(field string, got, want any) {
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: %q, ждали %q", field, got, want)
+		}
+	}
+	check("название", d.Title, "Талейран")
+	check("подзаголовок", d.Subtitle, "Из мемуаров Талейрана")
+	check("авторы", d.Authors, []string{"Тарле Е. В."})
+	check("город", d.City, "Москва")
+	check("издательство", d.Publisher, "Республика")
+	check("год", d.Year, 1993)
+	check("страницы", d.Pages, 317)
+	check("ISBN", d.ISBN, []string{"5-250-02008-9"})
+	check("ББК", d.BBK, "63.3(4Фр)")
+	check("авторский знак", d.AuthorSign, "Т 20")
+	if !strings.HasPrefix(d.Annotation, "Герой кни") { // «книги» Tesseract читает «книти»
+		t.Errorf("аннотация — абзац после номера: %.60q", d.Annotation)
+	}
+}
+
+// Оборот Степкина (2017): описание не по ГОСТу, но «ISBN» (прочитан «15ВЖХ») и УДК делают
+// страницу карточкой — номер и УДК попадают в черновик, а по номеру карточку заполнит РГБ.
+func TestRealBackWithISBNAndUDK(t *testing.T) {
+	d := probe(t, "stepkin-back.tsv")
+	if d.Kind != KindCard {
+		t.Fatalf("оборот с ISBN и УДК принят за %q", d.Kind)
+	}
+	if len(d.ISBN) == 0 || d.ISBN[0] != "978-5-600-01715-3" || d.UDK != "94:355:359" {
+		t.Errorf("ISBN %q, УДК %q", d.ISBN, d.UDK)
+	}
+}
+
+// Карточка без аннотации: после шифров — знак охраны авторского права, это не аннотация.
+func TestCardWithoutAnnotation(t *testing.T) {
+	at := func(top int, s string) Line { return Line{Text: s, Top: top, Height: 30, Conf: 90} }
+	var d Draft
+	parseCard([]Line{
+		at(100, "Х 24 Операция «Оверлорд»: Как был открыт второй фронт.— М.: Прогресс, 1989.— 352 с.: ил."),
+		at(400, "ББК 63.3(0)62"),
+		at(600, "© «Прогресс», 1989"),
+	}, &d)
+	if d.Annotation != "" {
+		t.Errorf("аннотация из выходных сведений: %q", d.Annotation)
+	}
+	if !IsCard([]string{"15ВЖХ 978-5-600-01715-3", "УДК 94:355:359"}) {
+		t.Error("искажённая подпись с номером — признак карточки")
+	}
+	if IsCard([]string{"15ВН", "УДК"}) { // подпись без номера — не в счёт, остаётся один признак
+		t.Error("искажённая подпись без номера засчитана")
+	}
+}
+
+// Терпимость к подменам не должна делать карточкой обычный титул.
+func TestTitleStaysTitle(t *testing.T) {
+	if d := probe(t, "overlord-title.tsv"); d.Kind != KindTitle {
+		t.Errorf("титул «Оверлорда» принят за %q", d.Kind)
+	}
+	for _, lines := range [][]string{
+		{"М. РИДЖУЭЙ", "СОЛДАТ", "Перевод с английского", "ВОЕННОЕ ИЗДАТЕЛЬСТВО", "МОСКВА — 1958"},
+		{"Е. В. Тарле", "ТАЛЕЙРАН", "Из мемуаров Талейрана", "Москва", "Издательство «Республика»", "1993"},
+		{"в 20 томах", "Том 3"}, // строчная буква с числом через пробел — не авторский знак
+	} {
+		if IsCard(lines) {
+			t.Errorf("титул принят за карточку: %q", lines)
+		}
 	}
 }
 

@@ -93,7 +93,11 @@ func TestCorpus(t *testing.T) {
 	}
 	sort.Strings(names)
 	total, hit := 0, 0
+	only := os.Getenv("FILIN_OCR_ONLY") // одна-две пробы через запятую — для разбора
 	for _, n := range names {
+		if only != "" && !strings.Contains(only, n) {
+			continue
+		}
 		base, quarter, _ := strings.Cut(n, "@")
 		photo, err := os.ReadFile(filepath.Join(dir, base+".jpg"))
 		if err != nil {
@@ -108,7 +112,18 @@ func TestCorpus(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", n, err)
 		}
+		if save := os.Getenv("FILIN_OCR_SAVE"); save != "" { // таблица слов — в testdata для тестов разбора
+			if err := os.WriteFile(filepath.Join(save, n+".tsv"), tsv, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
 		d := Parse(ParseTSV(tsv))
+		if os.Getenv("FILIN_OCR_VERBOSE") != "" {
+			t.Logf("%s строки:\n  %s", n, strings.Join(d.Lines, "\n  "))
+			t.Logf("%s черновик: вид %s | %q / %q | авторы %q люди %v | %s: %s, %d | с. %d | ISBN %q ББК %q УДК %q знак %q | аннотация %d зн.",
+				n, d.Kind, d.Title, d.Subtitle, d.Authors, d.People, d.City, d.Publisher, d.Year, d.Pages,
+				d.ISBN, d.BBK, d.UDK, d.AuthorSign, len([]rune(d.Annotation)))
+		}
 		joined := strings.Join(d.Lines, " ")
 		text := foldKey(strings.Join(strings.Fields(joined), " "))
 		digits := reNotDigit.ReplaceAllString(joined, "")
