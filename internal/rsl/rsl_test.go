@@ -81,7 +81,7 @@ func TestSyntheticRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := ToCard(r, "000000001").Edition
-	if e.Title != "Собрание сочинений. в 20 т." || e.Volume != "Т. 3. Айвенго" {
+	if e.Title != "Собрание сочинений" || e.Volume != "Т. 3. Айвенго" { // «в 20 т.» — не название
 		t.Errorf("название и том: %q / %q", e.Title, e.Volume)
 	}
 	if e.PrintPrice != "1 р. 20 к." || e.Circulation != 100000 {

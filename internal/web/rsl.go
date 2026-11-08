@@ -226,11 +226,10 @@ func (s *server) rslCard(r *http.Request, ref string) (rsl.Card, error) {
 	if err != nil {
 		return rsl.Card{}, catalog.InputError(err.Error())
 	}
-	rec, err := s.rsl.Fetch(r.Context(), id)
+	c, err := s.rsl.Card(r.Context(), id) // запись тома — вместе с записью всего издания
 	if err != nil {
 		return rsl.Card{}, err
 	}
-	c := rsl.ToCard(rec, id)
 	good, _ := catalog.ParseISBNs(c.ISBNs...)
 	c.Edition.ISBNs = good
 	return c, nil
@@ -244,11 +243,11 @@ func (s *server) rememberedLives(ref string) map[string]string {
 	if err != nil {
 		return nil
 	}
-	rec, ok := s.rsl.Peek(id)
+	c, ok := s.rsl.PeekCard(id)
 	if !ok {
 		return nil
 	}
-	return rsl.ToCard(rec, id).Lives
+	return c.Lives
 }
 
 // onlyPeople — годы жизни только тех, кто есть в карточке: при дополнении человек мог
