@@ -111,6 +111,6 @@ func (s *server) finishProbe(sample string, bookID int64, title, publisher, city
 	err := s.probes.Finish(sample, map[string]any{"book": bookID, "title": title, "authors": authors,
 		"publisher": publisher, "city": city, "year": year})
 	if err != nil {
-		log.Printf("проба %s: итог не записан: %v", sample, err)
+		log.Printf("проба %s: %v", sample, err)
 	}
 }

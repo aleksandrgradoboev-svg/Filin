@@ -62,6 +62,12 @@ func New(st *catalog.Store, covers string, opts ...Option) (http.Handler, error)
 	for _, o := range opts {
 		o(s)
 	}
+	// пробы, заведённые до правила «фото удалять»: у сохранённых книг фото больше не нужно
+	if n, err := s.probes.DropFinishedPhotos(); err != nil {
+		log.Printf("пробы распознавания: фото не убраны: %v", err)
+	} else if n > 0 {
+		log.Printf("пробы распознавания: убрано фото у %d сохранённых книг, текст остался", n)
+	}
 	funcs := template.FuncMap{
 		"people":    peopleGroups,
 		"personurl": personURL,
