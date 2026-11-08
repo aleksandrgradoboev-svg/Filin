@@ -18,3 +18,6 @@ dist/
 # приложение, вшиваемое в выпуск (release.ps1 кладёт на время сборки)
 internal/bundled/app/filin.apk
 internal/bundled/app/app.json
+
+# рабочий план — только у себя, не публикуется
+docs/план.html
