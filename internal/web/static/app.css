@@ -196,6 +196,18 @@ select { width: 100%; font: inherit; color: var(--ink); background: rgba(255, 25
 .tag.read { background: var(--accent); color: var(--accent-ink); }
 .value { margin: 6px 0; }
 .vals { margin: 8px 0 0; padding-left: 20px; }
+/* собрания сочинений: полоса комплектности и места */
+.sets { list-style: none; margin: 8px 0 16px; padding: 0; display: grid; gap: 10px; }
+.sets li { border: 1px solid var(--line); border-radius: 5px; padding: 8px 12px; background: var(--card); }
+.meter { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin: 6px 0 2px; }
+.meter span { display: block; height: 100%; background: var(--accent); }
+.meter.big { height: 12px; }
+.places { list-style: none; padding: 0; margin: 10px 0 16px; display: grid; gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.places li { border: 1px solid var(--line); border-radius: 5px; padding: 6px 10px; }
+.places li.have { border-left: 4px solid var(--accent); }
+.places li.miss { border-left: 4px solid var(--warn); }
+.places .ped { margin-top: 2px; }
 /* предложения alib: галочка — аналог для оценки; похожие на это издание — с полосой слева */
 .offers { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; }
 .offers li { border: 1px solid var(--line); border-radius: 5px; padding: 6px 10px; }

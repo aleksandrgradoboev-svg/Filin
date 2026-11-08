@@ -1,0 +1,48 @@
+{{define "content"}}
+<p><a href="/sets">← Собрания</a></p>
+<h1>{{.C.Title}}</h1>
+<p class="muted">{{.C.Publisher}}{{if .C.YearFrom}}{{if .C.Publisher}}, {{end}}{{.C.YearFrom}}{{if and .C.YearTo (ne .C.YearTo .C.YearFrom)}}–{{.C.YearTo}}{{end}}{{end}}{{if .C.VolumesAnnounced}} · объявлено томов: {{.C.VolumesAnnounced}}{{end}}</p>
+{{with .C.Notes}}<p class="pre">{{.}}</p>{{end}}
+{{with .Err}}<div class="note err">{{.}}</div>{{end}}
+
+<div class="meter big" title="есть {{.Have}} из {{len .Places}}"><span style="width: {{percent .Have (len .Places)}}%"></span></div>
+<p><b>Есть {{.Have}} из {{len .Places}}</b>{{if .Missing}} · нет: {{join .Missing ", "}}{{else if .Places}} — <b>полный комплект</b>{{end}}</p>
+
+<ul class="places">
+  {{range $pl := .Places}}
+  <li class="{{if .Have}}have{{else}}miss{{end}}">
+    <div class="pname">{{if .Have}}✅{{else}}❌{{end}} <b>{{.Name}}</b></div>
+    {{range .Editions}}
+    <div class="ped"><a href="/book/{{.ID}}">{{.Title}}{{if .Volume}} <span class="vol">{{.Volume}}</span>{{end}}</a>
+      {{if not .Copies}}<span class="muted" title="издание в каталоге есть, а экземпляра нет">· нет экземпляра</span>{{end}}
+      <form method="post" action="/place/{{$pl.ID}}/unplace" class="inline-del" onsubmit="return confirm('Снять книгу с места «{{$pl.Name}}»? Сама книга останется.')">
+        <input type="hidden" name="edition" value="{{.ID}}"><button class="linklike" title="Снять с места">✕</button></form>
+    </div>
+    {{else}}<div class="muted">нет</div>{{end}}
+  </li>
+  {{end}}
+</ul>
+
+<details class="lend">
+  <summary>Поправить места</summary>
+  <form method="post" action="/sets/{{.C.ID}}/split" class="row-form">
+    <label>Том <input name="volume" inputmode="numeric" size="3" required></label>
+    <label>вышел в <input name="books" inputmode="numeric" size="2" required value="2"> книгах</label>
+    <button class="btn small">Разделить</button>
+  </form>
+  <form method="post" action="/sets/{{.C.ID}}/place" class="row-form">
+    <button class="btn small ghost">+ следующий том</button>
+  </form>
+  <form method="post" action="/sets/{{.C.ID}}/place" class="row-form">
+    <input name="label" required placeholder="Указатель, доп. том" aria-label="Подпись тома без номера">
+    <button class="btn small ghost">+ том без номера</button>
+  </form>
+  {{with .Places}}<form method="post" action="/sets/{{$.C.ID}}/remove" class="row-form" onsubmit="return confirm('Убрать место «'+this.place.selectedOptions[0].text+'» из собрания? Книги останутся в каталоге.')">
+    <select name="place" aria-label="Место">{{range .}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
+    <button class="btn small ghost">Убрать место</button> <span class="hint">лишний том или опечатка</span>
+  </form>{{end}}
+  <form method="post" action="/sets/{{.C.ID}}/delete" class="row-form" onsubmit="return confirm('Удалить собрание целиком? Книги и экземпляры останутся в каталоге.')">
+    <button class="btn small ghost">Удалить собрание</button>
+  </form>
+</details>
+{{end}}
