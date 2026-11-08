@@ -84,27 +84,73 @@ func (e *Engine) Recognize(img image.Image) ([]byte, error) {
 }
 
 // Lines — строки снимка сверху вниз и размер выпрямленного снимка в исходном масштабе.
+//
+// Модель ориентации смотрит только на середину страницы, и на титуле с картинкой посередине
+// угадывает (Эмар, «Твердая рука», 1982: «перевёрнута», и прямой снимок читался вверх
+// ногами — один «861» вместо шести строк). Поэтому её слову не верим на слово: сказала
+// «повёрнута» — читаем и так, и как есть, и берём, где уверенно прочитано больше; вышло
+// почти ничего — пробуем ещё и вверх ногами.
 func (e *Engine) Lines(img image.Image) (int, int, []Line, error) {
-	b := img.Bounds()
 	src := prepare(img)
-	scale := float64(b.Dx()) / float64(src.Rect.Dx())
+	q := 0
 	if e.ori != nil {
-		q, err := e.orientation(src)
+		var err error
+		if q, err = e.orientation(src); err != nil {
+			return 0, 0, nil, err
+		}
+	}
+	tries := []int{q}
+	if q != 0 {
+		tries = append(tries, 0)
+	}
+	var best pageRead
+	for i := 0; ; i++ {
+		var turn int
+		switch {
+		case i < len(tries):
+			turn = tries[i]
+		case i == len(tries) && best.score < enoughText && q != 2:
+			turn = 2 // почти ничего не прочитано — может, снимок вверх ногами, а модель промолчала
+		default:
+			return best.w, best.h, best.lines, nil
+		}
+		r, err := e.readPage(img, src, turn)
 		if err != nil {
 			return 0, 0, nil, err
 		}
-		src = rotateCW(src, 4-q) // повёрнута на q по часовой — вернуть против
+		if i == 0 || r.score > best.score {
+			best = r
+		}
 	}
+}
+
+// enoughText — сколько уверенно прочитанных знаков считать удачным чтением страницы.
+const enoughText = 40
+
+// pageRead — страница, прочитанная при одном повороте.
+type pageRead struct {
+	w, h  int
+	lines []Line
+	score float64 // знаки × уверенность: по нему выбирается поворот
+}
+
+// readPage — строки страницы, повёрнутой на q четвертей против часовой (то есть страница
+// была повёрнута на q по часовой).
+func (e *Engine) readPage(img image.Image, prepared *image.RGBA, q int) (pageRead, error) {
+	b := img.Bounds()
+	scale := float64(b.Dx()) / float64(prepared.Rect.Dx())
+	src := rotateCW(prepared, 4-q)
 	pw, ph := int(float64(src.Rect.Dx())*scale+0.5), int(float64(src.Rect.Dy())*scale+0.5)
 	boxes, err := e.detect(src)
 	if err != nil {
-		return 0, 0, nil, err
+		return pageRead{}, err
 	}
+	res := pageRead{w: pw, h: ph}
 	var out []Line
 	for _, r := range boxes {
 		text, conf, err := e.read(crop(src, r))
 		if err != nil {
-			return 0, 0, nil, err
+			return pageRead{}, err
 		}
 		text = strings.Join(strings.Fields(text), " ")
 		if text == "" || conf < recMinScore {
@@ -116,8 +162,10 @@ func (e *Engine) Lines(img image.Image) (int, int, []Line, error) {
 			Left: int(xmin * scale), Top: int(ymin * scale),
 			Width: int((xmax - xmin) * scale), Height: int((ymax - ymin) * scale),
 		})
+		res.score += float64(len([]rune(strings.ReplaceAll(text, " ", "")))) * conf
 	}
-	return pw, ph, out, nil
+	res.lines = out
+	return res, nil
 }
 
 func bounds(r rect) (xmin, ymin, xmax, ymax float64) {
@@ -148,9 +196,10 @@ var (
 	// латинские буквы, неотличимые от русских на титуле
 	latToCyr = strings.NewReplacer(
 		"A", "А", "B", "В", "C", "С", "E", "Е", "H", "Н", "K", "К", "M", "М", "O", "О", "P", "Р",
-		"T", "Т", "X", "Х", "a", "а", "c", "с", "e", "е", "o", "о", "p", "р", "x", "х", "y", "у")
+		"T", "Т", "X", "Х", "a", "а", "c", "с", "e", "е", "k", "к", "o", "о", "p", "р", "x", "х", "y", "у")
 	// буквы, у которых есть русский двойник: слово только из них может быть русским
-	reTwinsOnly = regexp.MustCompile(`^[ABCEHKMOPTXaceopxy]+$`)
+	// («PykA» — «РУКА» с титула Эмара)
+	reTwinsOnly = regexp.MustCompile(`^[ABCEHKMOPTXacekopxy]+$`)
 	// служебные слова карточки, которые модель читает латиницей: «BBK 63.3(0)62», «YDK 94:355»
 	reBBK = regexp.MustCompile(`^(?:BBK|BEK|ВВК|ВЕК|BБК)$`)
 	reUDK = regexp.MustCompile(`^(?:YDK|УDK|YДК|УДK)$`)

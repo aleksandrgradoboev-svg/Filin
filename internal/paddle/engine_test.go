@@ -15,6 +15,7 @@ func TestCyrillic(t *testing.T) {
 		"Operation Overlord":     "Operation Overlord",
 		"Москва 1965 Ленинград":  "Москва 1965 Ленинград",
 		"ВальтерGкотm":           "ВальтерGкотm",
+		"PykA":                   "РукА",
 	} {
 		if got := cyrillic(in); got != want {
 			t.Errorf("cyrillic(%q) = %q, ждали %q", in, got, want)
