@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"unsafe"
 
@@ -69,6 +70,7 @@ type TrayItem struct {
 // Tray показывает значок в трее и держит программу, пока человек не выберет «Закрыть Филин»;
 // после этого вызывается onQuit. items — пункты меню над «Закрыть Филин».
 func Tray(tip string, items []TrayItem, onQuit func()) {
+	baseTip.Store(tip)
 	systray.Run(func() {
 		systray.SetIcon(Icon)
 		systray.SetTooltip(tip)
@@ -96,6 +98,17 @@ func Tray(tip string, items []TrayItem, onQuit func()) {
 
 // Quit закрывает программу так же, как «Закрыть Филин» в меню значка: с вызовом onQuit.
 func Quit() { systray.Quit() }
+
+var baseTip atomic.Value // подпись значка, заданная Tray
+
+// SetTip — подпись значка в трее (видна при наведении): ход долгого дела, например
+// скачивания обновления. Пусто — вернуть обычную.
+func SetTip(s string) {
+	if s == "" {
+		s, _ = baseTip.Load().(string)
+	}
+	systray.SetTooltip(s)
+}
 
 // Shortcuts — где лежат ярлыки: меню «Пуск» и рабочий стол текущего пользователя.
 func Shortcuts() ([]string, error) {

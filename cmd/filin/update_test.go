@@ -57,6 +57,28 @@ func TestCloseWaitsForSwap(t *testing.T) {
 	}
 }
 
+// TestCloseStopsDownload — закрытие прерывает скачивание, а не ждёт его конца: загрузка без
+// предела по времени, и «Закрыть Филин» иначе висело бы до её конца (так 08.11 остался
+// висеть процесс, «закрытый» посреди загрузки 1.0.3).
+func TestCloseStopsDownload(t *testing.T) {
+	u := &updater{}
+	u.applying.Add(1)
+	stopped := make(chan struct{})
+	u.stop = func() { close(stopped); u.applying.Done() } // прерванное скачивание сразу выходит
+	closed := make(chan struct{})
+	go func() { u.close(); close(closed) }()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("close ждёт скачивание, а не прерывает его")
+	}
+	select {
+	case <-stopped:
+	default:
+		t.Fatal("скачивание не прервано")
+	}
+}
+
 func TestSupportedWithoutFlags(t *testing.T) {
 	// main не запускался, флаги не разобраны: выключено, а не паника
 	if supported() {

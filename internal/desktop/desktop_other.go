@@ -49,6 +49,9 @@ func Tray(tip string, items []TrayItem, onQuit func()) {
 	onQuit()
 }
 
+// SetTip вне Windows ничего не делает: значка нет, а ход загрузки пишется в журнал.
+func SetTip(string) {}
+
 // Quit закрывает программу так же, как Ctrl+C.
 func Quit() {
 	select {

@@ -50,6 +50,9 @@ type updater struct {
 	mu       sync.Mutex
 	closing  bool           // человек закрыл Филина — новую замену не начинать, новую версию не запускать
 	applying sync.WaitGroup // идёт замена: программа не выходит, пока она не кончится
+	// stop прерывает скачивание: закрытие Филина не ждёт загрузку (она без предела по
+	// времени — на медленном канале минут 20), недокачанное продолжится при следующем запуске
+	stop context.CancelFunc
 
 	d      *sql.DB
 	path   string // база
@@ -126,12 +129,21 @@ func (u *updater) check(manual bool) {
 		return
 	}
 	u.applying.Add(1)
+	ctx, stop := context.WithCancel(context.Background())
+	u.stop = stop
 	u.mu.Unlock()
-	err = u.apply(exe, rel, ua)
+	err = u.apply(ctx, exe, rel, ua)
+	u.mu.Lock()
+	u.stop = nil
+	closingNow := u.closing
+	u.mu.Unlock()
+	stop()
 	u.applying.Done()
 	if err != nil {
 		log.Printf("обновление до %s: %v", rel.Version, err)
-		desktop.Message("Филин — обновление не встало", err.Error()+"\n\nФилин работает в прежней версии, "+version+".")
+		if !closingNow { // закрыли посреди скачивания — это не сбой, окно с ошибкой ни к чему
+			desktop.Message("Филин — обновление не встало", err.Error()+"\n\nФилин работает в прежней версии, "+version+".")
+		}
 		return
 	}
 	u.mu.Lock()
@@ -151,20 +163,33 @@ func (u *updater) check(manual bool) {
 func (u *updater) close() {
 	u.mu.Lock()
 	u.closing = true
+	if u.stop != nil {
+		u.stop() // скачивание — прервать; копию и перестановку файлов (если уже идут) — дождаться
+	}
 	u.mu.Unlock()
 	u.applying.Wait()
 }
 
 // apply скачивает выпуск, делает копию библиотеки и ставит новую программу на место.
 // Пока не дошло до Swap, рабочая программа не тронута.
-func (u *updater) apply(exe string, rel update.Release, ua string) error {
-	// предел — только на скачивание: копия большой библиотеки с медленного диска идёт
-	// сколько идёт, обрывать её по часам — значит не обновиться никогда
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	err := update.Download(ctx, http.DefaultClient, rel, exe, ua)
-	cancel()
+func (u *updater) apply(ctx context.Context, exe string, rel update.Release, ua string) error {
+	// общего предела по времени нет: на медленном канале 50 МБ идут и 20 минут, а предел в 15
+	// не пустил к 1.0.3 никого (обрыв и каждый раз с нуля). Скачивание само рвёт соединение,
+	// если долго нет данных, и докачивает недостающее (update.Fetch). Ход — в подписи значка.
+	log.Printf("обновление до %s: скачиваю %.1f МБ", rel.Version, float64(rel.Size)/(1<<20))
+	var shown atomic.Int64
+	err := update.Download(ctx, http.DefaultClient, rel, exe, ua, func(done, total int64) {
+		if mb := done >> 20; mb != shown.Load() {
+			shown.Store(mb)
+			desktop.SetTip(fmt.Sprintf("Филин: скачиваю %s — %d из %d МБ", rel.Version, mb, total>>20))
+		}
+	})
+	desktop.SetTip("")
 	if err != nil {
 		return fmt.Errorf("скачивание: %w", err)
+	}
+	if ctx.Err() != nil { // закрыли ровно на последнем байте: скачанное лежит, поставится в следующий раз
+		return ctx.Err()
 	}
 	copyPath, err := u.backup(rel.Version)
 	if err != nil {

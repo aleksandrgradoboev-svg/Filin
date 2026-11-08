@@ -117,7 +117,7 @@ func TestDownloadAndSwap(t *testing.T) {
 	exe := filepath.Join(dir, "filin.exe")
 	os.WriteFile(exe, []byte("старая"), 0o755)
 	s, r := exeServer(t, []byte("новая программа"))
-	if err := Download(context.Background(), s.Client(), r, exe, "filin/test"); err != nil {
+	if err := Download(context.Background(), s.Client(), r, exe, "filin/test", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := Swap(exe); err != nil {
@@ -150,7 +150,7 @@ func TestDownloadRejectsBadFile(t *testing.T) {
 			os.WriteFile(exe, []byte("старая"), 0o755)
 			s, r := exeServer(t, []byte("новая программа"))
 			tweak(&r)
-			if err := Download(context.Background(), s.Client(), r, exe, "filin/test"); err == nil {
+			if err := Download(context.Background(), s.Client(), r, exe, "filin/test", nil); err == nil {
 				t.Fatal("битый файл принят")
 			}
 			if _, err := os.Stat(NewPath(exe)); !os.IsNotExist(err) {
