@@ -178,9 +178,7 @@ class BookActivity : ComponentActivity() {
             // самое длинное слово без точки («Хастингс М.», «М. Риджуэй» → фамилия, а не инициал)
             val words = title.text.toString().substringBefore(":").replace(Regex("""[«»"„“()\[\]!?]"""), " ")
                 .split(Regex("""\s+""")).filter { it.isNotBlank() }
-            val surname = authors.text.toString().split(",").first().split(Regex("""\s+"""))
-                .filter { it.isNotBlank() && !it.contains('.') }.maxByOrNull { it.length }
-            val byAuthor = surname?.let { "author:$it" }.orEmpty()
+            val byAuthor = RslActivity.authorQuery(authors.text.toString())
             val q = if (isbn.isNotEmpty()) "isbn:$isbn" else listOfNotNull(
                 words.takeIf { it.isNotEmpty() }?.let { "title:(${it.joinToString(" ")})" },
                 byAuthor.ifEmpty { null },

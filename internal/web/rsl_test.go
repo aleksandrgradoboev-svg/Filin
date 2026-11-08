@@ -208,7 +208,12 @@ func TestRSLQuery(t *testing.T) {
 			People: []catalog.Person{{Name: "Федотов Е. М.", Role: "translator"}, {Name: "Хастингс М.", Role: "author"}}},
 			"title:(Операция Оверлорд) author:Хастингс", "author:Хастингс"},
 		{catalog.Edition{Title: "Шахматы"}, "title:(Шахматы)", ""},
-		{catalog.Edition{Title: "", People: []catalog.Person{{Name: "Риджуэй Мэтью", Role: "author"}}}, "author:Риджуэй", ""},
+		{catalog.Edition{Title: "", People: []catalog.Person{{Name: "Риджуэй Мэтью", Role: "author"}}}, "author:(Риджуэй Мэтью)", ""},
+		// все слова имени, а не самое длинное: «Густав» искал Густава Малера и звукозаписи
+		{catalog.Edition{Title: "Твердая рука", People: []catalog.Person{{Name: "Густав Эмар", Role: "author"}}},
+			"title:(Твердая рука) author:(Густав Эмар)", "author:(Густав Эмар)"},
+		{catalog.Edition{Title: "Талейран", People: []catalog.Person{{Name: "Тарле Е. В.", Role: "author"}}},
+			"title:(Талейран) author:Тарле", "author:Тарле"},
 	} {
 		q, fb := rslQuery(c.e)
 		if q != c.q || fb != c.fb {
@@ -287,8 +292,8 @@ func TestRSLSearchList(t *testing.T) {
 		t.Fatalf("страница поиска: %d", code)
 	}
 	c := <-calls
-	want := "https://search.rsl.ru/ru/search#q=" + strings.ReplaceAll(url.QueryEscape("title:(Водители фрегатов) author:Чуковский"), "+", "%20")
-	if c.page != want || len(c.next) != 1 || c.next[0] != rslFragment("author:Чуковский", 0) {
+	want := "https://search.rsl.ru/ru/search#q=" + strings.ReplaceAll(url.QueryEscape("title:(Водители фрегатов) author:(Николай Чуковский)"), "+", "%20")
+	if c.page != want || len(c.next) != 1 || c.next[0] != rslFragment("author:(Николай Чуковский)", 0) {
 		t.Errorf("поиск: %q / %q", c.page, c.next)
 	}
 	// второе нажатие, пока ищем, второго поиска не запускает

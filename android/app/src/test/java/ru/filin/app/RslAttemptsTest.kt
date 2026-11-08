@@ -26,6 +26,15 @@ class RslAttemptsTest {
         assertEquals(listOf("isbn:9785042431180" to 0), RslActivity.attempts("isbn:9785042431180", "", 1983))
     }
 
+    // те же имена, что в TestRSLQuery на сервере
+    @Test fun authorQuery() {
+        assertEquals("author:(Густав Эмар)", RslActivity.authorQuery("Густав Эмар"))
+        assertEquals("author:Тарле", RslActivity.authorQuery("Тарле Е. В."))
+        assertEquals("author:Хастингс", RslActivity.authorQuery("Хастингс М., Федотов Е. М."))
+        assertEquals("author:(Майн Рид)", RslActivity.authorQuery("Майн Рид"))
+        assertEquals("", RslActivity.authorQuery("  "))
+    }
+
     @Test fun describe() {
         assertEquals("$fb, 1983 г.", RslActivity.describe(fb to 1983))
         assertEquals(fb, RslActivity.describe(fb to 0))

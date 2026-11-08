@@ -41,30 +41,47 @@ func rslQuery(e catalog.Edition) (q, fallback string) {
 	}
 	title, _, _ := strings.Cut(e.Title, ":")
 	words := strings.Fields(reQuoteMarks.ReplaceAllString(title, " "))
-	var surname string
+	var author string
 	for _, p := range e.People {
 		if p.Role != "author" {
 			continue
 		}
-		first, _, _ := strings.Cut(p.Name, ",")
-		for _, w := range reSpaces.Split(strings.TrimSpace(first), -1) {
-			if w != "" && !strings.Contains(w, ".") && len([]rune(w)) > len([]rune(surname)) {
-				surname = w
-			}
-		}
+		author = rslAuthor(p.Name)
 		break
 	}
 	var parts []string
 	if len(words) > 0 {
 		parts = append(parts, "title:("+strings.Join(words, " ")+")")
 	}
-	if surname != "" {
-		parts = append(parts, "author:"+surname)
+	if author != "" {
+		parts = append(parts, author)
 		if len(words) > 0 {
-			fallback = "author:" + surname
+			fallback = author
 		}
 	}
 	return strings.Join(parts, " "), fallback
+}
+
+// rslAuthor — автор для запроса РГБ: все слова имени, кроме инициалов, — РГБ ищет запись,
+// где есть каждое. Раньше бралось одно самое длинное слово, и «Густав Эмар» искался как
+// «Густав» — первым шёл Густав Малер. Порядок слов не важен: у РГБ «Эмар, Густав»,
+// «Рид, Томас Майн». «Хастингс М.» — author:Хастингс.
+func rslAuthor(name string) string {
+	first, _, _ := strings.Cut(name, ",")
+	var ws []string
+	for _, w := range reSpaces.Split(strings.TrimSpace(first), -1) {
+		w = strings.Trim(w, "«»\"()[]")
+		if len([]rune(w)) > 1 && !strings.Contains(w, ".") {
+			ws = append(ws, w)
+		}
+	}
+	switch len(ws) {
+	case 0:
+		return ""
+	case 1:
+		return "author:" + ws[0]
+	}
+	return "author:(" + strings.Join(ws, " ") + ")"
 }
 
 // rslPageBase — страница поиска РГБ; запрос и фильтры — в части адреса после «#».

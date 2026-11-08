@@ -218,6 +218,22 @@ class RslActivity : ComponentActivity() {
         fun fragment(a: Pair<String, Int>): String =
             (if (a.second > 0) "yf=${a.second}&yt=${a.second}&" else "") + "q=" + Uri.encode(a.first)
 
+        /**
+         * Автор для запроса РГБ — как web.rslAuthor на сервере: все слова первого имени, кроме
+         * инициалов; РГБ ищет запись, где есть каждое. Одно самое длинное слово искало
+         * «Густав Эмар» как «Густав» — и находило Густава Малера.
+         */
+        fun authorQuery(names: String): String {
+            val ws = names.split(",").first().split(Regex("""\s+"""))
+                .map { it.trim('«', '»', '"', '(', ')', '[', ']') }
+                .filter { it.length > 1 && !it.contains('.') }
+            return when (ws.size) {
+                0 -> ""
+                1 -> "author:${ws[0]}"
+                else -> "author:(${ws.joinToString(" ")})"
+            }
+        }
+
         /** Как показать попытку человеку: «title:(…) author:Рид, 1983 г.». */
         fun describe(a: Pair<String, Int>): String = a.first + if (a.second > 0) ", ${a.second} г." else ""
         const val EXTRA_RECORD = "record"
