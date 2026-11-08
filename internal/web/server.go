@@ -73,7 +73,7 @@ func New(st *catalog.Store, covers string, opts ...Option) (http.Handler, error)
 		"join":      strings.Join,
 		"price":     price,
 		"grade":     catalog.GradeName,
-		"grades":    func() []string { return catalog.Grades },
+		"grades":    gradeScale, // шкала сверху вниз, с пояснениями
 	}
 	for _, p := range []string{"list", "book", "edition_form", "copy_form", "scan", "loans", "borrower", "value", "series", "genres", "person", "people", "devices", "alib"} {
 		t, err := template.New("").Funcs(funcs).ParseFS(files, "tmpl/layout.html", "tmpl/copyfields.html", "tmpl/loanlist.html", "tmpl/"+p+".html")

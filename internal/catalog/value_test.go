@@ -128,3 +128,19 @@ func TestValuationRange(t *testing.T) {
 		t.Error("база приняла перевёрнутый диапазон")
 	}
 }
+
+// Шкала и пояснения к ней — один список ступеней: пояснение без ступени или ступень без
+// пояснения уронили бы форму экземпляра.
+func TestGradeHintsMatchGrades(t *testing.T) {
+	if len(GradeHints) != len(Grades) {
+		t.Fatalf("ступеней %d, пояснений %d", len(Grades), len(GradeHints))
+	}
+	for i := 1; i < len(Grades); i++ {
+		if Grades[i] == "" || GradeHints[i] == "" {
+			t.Errorf("ступень %d без названия или пояснения", i)
+		}
+	}
+	if GradeName(6) != "идеальное" || GradeName(1) != "плохое" || GradeName(7) != "" {
+		t.Error("шкала alib: 1 — плохое, 6 — идеальное, 7 — вне шкалы")
+	}
+}

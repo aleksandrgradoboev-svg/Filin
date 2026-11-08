@@ -25,6 +25,21 @@ func digits(n int) string {
 
 const nbsp = " "
 
+// gradeStep — ступень шкалы состояния для формы.
+type gradeStep struct {
+	N          int
+	Name, Hint string
+}
+
+// gradeScale — шкала сверху вниз, как её пишет alib: от «идеального» к «плохому».
+func gradeScale() []gradeStep {
+	var out []gradeStep
+	for n := len(catalog.Grades) - 1; n >= 1; n-- {
+		out = append(out, gradeStep{n, catalog.Grades[n], catalog.GradeHints[n]})
+	}
+	return out
+}
+
 // rub показывает сумму: 12 500 ₽.
 func rub(n int) string { return digits(n) + nbsp + "₽" }
 
