@@ -34,7 +34,10 @@ h2::after { content: ""; display: block; width: 64px; margin-top: 4px; border-bo
   background: linear-gradient(180deg, #5a3a1f, #3e2713); border-bottom: 3px double #b8915a;
   box-shadow: 0 2px 8px rgba(40, 20, 5, .35); }
 .brand { display: flex; align-items: center; gap: 8px; color: #fff; text-decoration: none; font-weight: 700; font-size: 1.2rem; }
-.top nav { display: flex; gap: 8px; }
+/* страховка: не влезло в строку (крупный шрифт телефона, новая кнопка) — меню переносится
+   под название, а не уезжает за край экрана */
+.top { flex-wrap: wrap; }
+.top nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-left: auto; }
 .top .ghost { color: #fff; border-color: rgba(255,255,255,.4); }
 
 .btn { display: inline-block; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--accent);
@@ -160,8 +163,11 @@ input, textarea { background: rgba(255, 250, 235, .75); border-color: #cdb47e; }
 dt { font-variant: small-caps; letter-spacing: .03em; }
 
 /* выдача почитать */
-/* на телефоне в шапке только значки: три подписи не влезают в строку */
-@media (max-width: 480px) { .top .lbl { display: none; } .top .btn { min-width: 42px; text-align: center; } }
+/* в шапке только значки, когда подписи не влезают в строку. Пороги — по замеру 08.11.2026
+   с запасом на шрифты: четыре кнопки с подписями (узкий экран, без «Телефонов» и «Копии»)
+   требуют ~600 px, все шесть — ~845 px. Добавили кнопку — перемерить */
+@media (max-width: 660px), (min-width: 769px) and (max-width: 920px) {
+  .top .lbl { display: none; } .top .btn { min-width: 42px; text-align: center; } }
 .tiles .lent { position: static; align-self: flex-start; margin-top: -26px; margin-left: 6px; z-index: 1;
   font-size: .74rem; padding: 1px 7px; border-radius: 10px; background: #2f5d3a; color: #f5ecd2; }
 .tiles .lent.late, .loans li.overdue .late { background: var(--warn); color: #fff; }
