@@ -47,6 +47,7 @@ type Edition struct {
 	Format     string // как напечатано: «84x108/32 (130x200 мм)»
 	Pages      int    // 0 — неизвестно
 	Genres     []string
+	Subjects   []string // темы: цепочки уровней через SubjectSep, по порядку
 	Details
 	People []Person
 	ISBNs  []isbn.ISBN
@@ -153,6 +154,9 @@ func writeChildren(tx *sql.Tx, id int64, e *Edition) error {
 		}
 	}
 	if err := writeGenres(tx, id, e.Genres); err != nil {
+		return err
+	}
+	if err := writeSubjects(tx, id, e.Subjects); err != nil {
 		return err
 	}
 	return writeSeries(tx, id, e)

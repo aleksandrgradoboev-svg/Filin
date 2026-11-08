@@ -15,6 +15,10 @@
         <input type="hidden" name="edition" value="{{$.E.ID}}"><input type="hidden" name="back" value="book">
         <button class="linklike" title="Снять с места">✕</button></form>{{end}}</dd>{{end}}
     {{with .Genres}}<dt>Жанры</dt><dd class="chips">{{range .}}<a class="chip" href="/?g={{.ID}}">{{.Name}}</a>{{end}}</dd>{{end}}
+    {{with .E.Subjects}}<dt>Темы</dt><dd class="subjects">{{range .}}{{with crumbs .}}<div class="crumbs">
+      {{- range $i, $c := .Head}}{{if $i}} › {{end}}<a href="{{$c.URL}}">{{$c.Name}}</a>{{end}}
+      {{- with .Middle}} › <details class="crumb-more"><summary title="Показать все уровни">…</summary>{{range $i, $c := .}}{{if $i}} › {{end}}<a href="{{$c.URL}}">{{$c.Name}}</a>{{end}}</details>{{end}}
+      {{- range .Tail}} › <a href="{{.URL}}">{{.Name}}</a>{{end}}</div>{{end}}{{end}}</dd>{{end}}
     {{if or .E.OrigTitle .E.OrigLanguage}}<dt>Оригинал</dt><dd>{{.E.OrigTitle}}{{if and .E.OrigTitle .E.OrigLanguage}} · {{end}}{{with .E.OrigLanguage}}пер. с {{.}}{{end}}</dd>{{end}}
     {{with .E.Language}}<dt>Язык</dt><dd>{{.}}</dd>{{end}}
     {{if or .E.CoverType .E.Format .E.Pages}}<dt>Книга</dt><dd>{{.E.CoverType}}{{if and .E.CoverType (or .E.Format .E.Pages)}} · {{end}}{{.E.Format}}{{if and .E.Format .E.Pages}} · {{end}}{{if .E.Pages}}{{.E.Pages}} с.{{end}}</dd>{{end}}

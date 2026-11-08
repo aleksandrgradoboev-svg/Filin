@@ -1,14 +1,16 @@
 {{define "content"}}
 {{with .Deleted}}<div class="note ok">Книга «{{.}}» удалена.</div>{{end}}
 <form class="search" method="get" action="/">
-  <input type="search" name="q" value="{{.Q}}" placeholder="Название, автор, серия, жанр или ISBN">
+  <input type="search" name="q" value="{{.Q}}" placeholder="Название, автор, серия, жанр, тема или ISBN">
   {{if eq .View "list"}}<input type="hidden" name="view" value="list">{{end}}
   {{if .GenreID}}<input type="hidden" name="g" value="{{.GenreID}}">{{end}}
+  {{with .Subject}}<input type="hidden" name="t" value="{{.}}">{{end}}
   <button class="btn">Найти</button>
 </form>
 {{with .Genre}}<p class="chips"><span class="chip on">Жанр: {{.}} <a href="{{$.NoGenre}}" title="Все жанры" aria-label="Снять отбор по жанру">✕</a></span></p>{{end}}
+{{with .Subject}}<p class="chips"><span class="chip on">Тема: {{.}} <a href="{{$.NoSubject}}" title="Все темы" aria-label="Снять отбор по теме">✕</a></span></p>{{end}}
 <div class="bar">
-  {{if or .Q .GenreID}}<span class="muted">Найдено: {{.Total}} · <a href="{{.AllBook}}">весь каталог</a></span>
+  {{if or .Q .GenreID .Subject}}<span class="muted">Найдено: {{.Total}} · <a href="{{.AllBook}}">весь каталог</a></span>
   {{else}}<span class="muted">Изданий {{.Stats.Editions}} · экземпляров {{.Stats.Copies}} · <a href="/genres">жанры</a> · <a href="/people">авторы</a> · <a href="/devices">телефоны</a></span>{{end}}
   {{if .Rows}}<span class="views">
     <a href="{{.Tiles}}" class="{{if eq .View "tiles"}}on{{end}}" title="Плиткой">▦</a>

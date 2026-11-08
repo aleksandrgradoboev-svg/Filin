@@ -69,6 +69,11 @@ func TestVolumeWithWholeRecord(t *testing.T) {
 	if len(c.ISBNs) != 1 || c.ISBNs[0] != "978-985-18-4088-1" {
 		t.Errorf("ISBN: %q", c.ISBNs)
 	}
+	// темы — из записи издания (650 $a), цепочками; у тома своих нет
+	if len(e.Subjects) != 3 || !strings.HasPrefix(e.Subjects[0], "История. Исторические науки -- СССР -- ") ||
+		!strings.HasSuffix(e.Subjects[2], "Борьба с контрреволюцией и иностранными интервентами на юге России -- Воспоминания") {
+		t.Errorf("темы: %q", e.Subjects)
+	}
 	lines := strings.Split(e.Contents, "\n")
 	if len(lines) != 5 || lines[0] != "Белое движение и борьба Добровольческой армии. Май-октябрь 1918" ||
 		lines[4] != "Заключительный период борьбы. Январь 1919 - март 1920" {

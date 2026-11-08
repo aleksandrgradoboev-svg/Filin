@@ -132,6 +132,12 @@ legend { padding: 0 4px; }
 .note.ok { background: var(--ok-bg); }
 .note ul { margin: 6px 0; padding-left: 20px; }
 .danger { margin-top: 24px; }
+/* темы: цепочка уровней, длинная середина свёрнута в «…» */
+.subjects .crumbs { line-height: 1.5; margin-bottom: 6px; color: var(--muted); }
+details.crumb-more { display: inline; }
+details.crumb-more > summary { display: inline; cursor: pointer; list-style: none; padding: 0 4px; border-radius: 4px; background: var(--line); }
+details.crumb-more > summary::-webkit-details-marker { display: none; }
+details.crumb-more[open] > summary { display: none; }
 
 [hidden] { display: none !important; }
 .scanner { position: relative; background: #000; border-radius: 12px; overflow: hidden; aspect-ratio: 4 / 3; max-height: 60vh; }

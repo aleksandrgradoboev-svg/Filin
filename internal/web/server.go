@@ -88,6 +88,7 @@ func New(st *catalog.Store, covers string, opts ...Option) (http.Handler, error)
 		"price":     price,
 		"grade":     catalog.GradeName,
 		"grades":    gradeScale, // шкала сверху вниз, с пояснениями
+		"crumbs":    crumbs,
 	}
 	for _, p := range []string{"list", "book", "edition_form", "copy_form", "scan", "loans", "borrower", "value", "series", "genres", "person", "people", "devices", "alib", "sets", "set", "rsl_wait", "book_delete"} {
 		t, err := template.New("").Funcs(funcs).ParseFS(files, "tmpl/layout.html", "tmpl/copyfields.html", "tmpl/loanlist.html", "tmpl/"+p+".html")
@@ -269,7 +270,9 @@ func (s *server) list(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	rows, total, err := s.st.SearchIn(q, g, pageSize, (page-1)*pageSize)
+	// тема — уровень целиком, со ссылки в карточке: «Период гражданской войны (1918-1920)»
+	subject := strings.Join(strings.Fields(r.URL.Query().Get("t")), " ")
+	rows, total, err := s.st.SearchBy(q, catalog.Filter{GenreID: g, Subject: subject}, pageSize, (page-1)*pageSize)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -280,10 +283,13 @@ func (s *server) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// ссылки собираются здесь: в шаблоне html/template экранировал бы «&» и «=» готовой строки
-	link := func(view string, g int64, page int) template.URL {
+	link := func(view string, g int64, subject string, page int) template.URL {
 		v := url.Values{}
 		if q != "" {
 			v.Set("q", q)
+		}
+		if subject != "" {
+			v.Set("t", subject)
 		}
 		if view == "list" {
 			v.Set("view", "list")
@@ -301,7 +307,7 @@ func (s *server) list(w http.ResponseWriter, r *http.Request) {
 	}
 	s.render(w, "list", struct {
 		Title                     string
-		Q, View, Genre            string
+		Q, View, Genre, Subject   string
 		Deleted                   string // название только что удалённой книги
 		GenreID                   int64
 		Rows                      []catalog.Row
@@ -310,11 +316,13 @@ func (s *server) list(w http.ResponseWriter, r *http.Request) {
 		Stats                     catalog.Stats
 		Prev, Next, Tiles, List   template.URL
 		NoGenre, NoQuery, AllBook template.URL
+		NoSubject                 template.URL
 	}{
-		Title: "Каталог", Q: q, View: view, Genre: genre, Deleted: r.URL.Query().Get("deleted"), GenreID: g, Rows: rows, Total: total, Page: page,
+		Title: "Каталог", Q: q, View: view, Genre: genre, Subject: subject, Deleted: r.URL.Query().Get("deleted"), GenreID: g, Rows: rows, Total: total, Page: page,
 		HasNext: page*pageSize < total, Stats: stats,
-		Prev: link(view, g, page-1), Next: link(view, g, page+1), Tiles: link("tiles", g, 1), List: link("list", g, 1),
-		NoGenre: link(view, 0, 1), AllBook: "/",
+		Prev: link(view, g, subject, page-1), Next: link(view, g, subject, page+1),
+		Tiles: link("tiles", g, subject, 1), List: link("list", g, subject, 1),
+		NoGenre: link(view, 0, subject, 1), NoSubject: link(view, g, "", 1), AllBook: "/",
 	})
 }
 
@@ -547,6 +555,7 @@ func readEdition(r *http.Request, f *editionForm) {
 	f.E.SeriesNo = strings.TrimSpace(r.FormValue("series_no"))
 	f.Genres = r.FormValue("genres")
 	f.E.Genres = catalog.ParseGenres(f.Genres)
+	f.E.Subjects = catalog.ParseSubjects(r.FormValue("subjects"))
 	for _, k := range []struct {
 		name string
 		to   *string

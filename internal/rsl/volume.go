@@ -122,6 +122,8 @@ func VolumeCard(vol Record, id string, whole Record) Card {
 			e.People = append(e.People, p)
 		}
 	}
+	// темы тома — к темам издания, без повторов
+	e.Subjects = catalog.ParseSubjects(strings.Join(append(append([]string{}, e.Subjects...), ve.Subjects...), "\n"))
 	for n, l := range v.Lives {
 		c.Lives[n] = l
 	}

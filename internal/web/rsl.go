@@ -384,6 +384,11 @@ func fillEmpty(e *catalog.Edition, src catalog.Edition) fillReport {
 			rep.Filled = append(rep.Filled, strings.ToLower(roleTitle(p.Role)))
 		}
 	}
+	// темы — списком целиком и только в пустое: свои темы человек подбирал сам
+	if len(e.Subjects) == 0 && len(src.Subjects) > 0 {
+		e.Subjects = src.Subjects
+		rep.Filled = append(rep.Filled, "темы")
+	}
 	if addISBNs(&e.ISBNs, src.ISBNs) {
 		rep.Filled = append(rep.Filled, "ISBN")
 	}
