@@ -13,6 +13,21 @@
 {{if .Top}}{{template "valuelist" .Top}}
 {{else}}<p class="muted">Пока ничего не оценено. Оценить — в карточке книги, у экземпляра «Оценить».</p>{{end}}
 
+<h2>📕 Комплекты</h2>
+{{if .Sets}}
+<p class="muted">Полный комплект ценнее суммы томов: «докупить т. 3» — и собрание вырастет в цене. Сверху — те,
+  кому не хватает меньше всего. Сумма — оценки экземпляров собрания; комплект целиком отдельно не оценивается.</p>
+<ul class="sets">
+  {{range .Sets}}
+  <li><a href="/sets/{{.ID}}"><b>{{.Title}}</b></a>
+    <div class="meter" title="есть {{.Have}} из {{.Places}}"><span style="width: {{percent .Have .Places}}%"></span></div>
+    <div>есть {{.Have}} из {{.Places}}{{if .Missing}} · <b>не хватает:</b> {{join .Missing ", "}}{{else if .Places}} — <b>полный комплект</b>{{end}}</div>
+    <div class="muted">{{if .Valued}}оценено {{.Valued}} из {{.Copies}} экз. на {{price .Total .TotalTo}}{{else if .Copies}}экземпляры не оценены ({{.Copies}}){{else}}экземпляров пока нет{{end}}</div>
+  </li>
+  {{end}}
+</ul>
+{{else}}<p class="muted">Собраний пока нет — <a href="/sets">завести</a>: название и сколько томов.</p>{{end}}
+
 <h2>❤️ Дорожу</h2>
 {{if .Cherished}}{{template "valuelist" .Cherished}}
 {{else}}<p class="muted">Ничего не отмечено. Отметка «дорожу» — в правке экземпляра: для памятного и собранного,

@@ -144,6 +144,7 @@ type valuePage struct {
 	Sum       catalog.ValueSummary
 	Top       []catalog.ValueRow
 	Cherished []catalog.ValueRow
+	Sets      []setValue
 }
 
 func (s *server) value(w http.ResponseWriter, r *http.Request) {
@@ -158,6 +159,10 @@ func (s *server) value(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.Cherished, err = s.st.MostValuable(200, true); err != nil {
+		s.fail(w, err)
+		return
+	}
+	if p.Sets, err = s.setValues(); err != nil {
 		s.fail(w, err)
 		return
 	}

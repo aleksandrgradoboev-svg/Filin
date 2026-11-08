@@ -339,6 +339,26 @@ func (s *Store) Unplace(placeID, editionID int64) (setID int64, err error) {
 	return setID, err
 }
 
+// SetWorth — во что оценены экземпляры собрания: сумма действующих оценок по нижней и
+// верхней границе. Экземпляр сдвоенного тома (два места) считается один раз.
+type SetWorth struct {
+	Copies  int // экземпляров изданий собрания
+	Valued  int // из них оценено
+	Total   int
+	TotalTo int
+}
+
+func (s *Store) SetWorth(setID int64) (SetWorth, error) {
+	var w SetWorth
+	err := s.db.QueryRow(`SELECT COUNT(*), COUNT(v.id), COALESCE(SUM(v.amount), 0),
+			COALESCE(SUM(COALESCE(v.amount_to, v.amount)), 0)
+		FROM book_copy c LEFT JOIN valuation v ON v.id = (`+currentValuation+`)
+		WHERE c.edition_id IN (SELECT se.edition_id FROM slot_edition se
+			JOIN collection_slot s ON s.id = se.slot_id WHERE s.collection_id = ?)`, setID).
+		Scan(&w.Copies, &w.Valued, &w.Total, &w.TotalTo)
+	return w, err
+}
+
 // EditionPlace — где издание стоит в собраниях: для карточки книги.
 type EditionPlace struct {
 	SetID    int64

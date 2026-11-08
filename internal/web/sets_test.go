@@ -134,3 +134,32 @@ func TestSetsFlow(t *testing.T) {
 		t.Errorf("удалённое собрание: %d", code)
 	}
 }
+
+// «Ценность»: собрание с тем, чего не хватает, и суммой оценок его экземпляров.
+func TestValueShowsSets(t *testing.T) {
+	a := newNetApp(t)
+	page := func() string {
+		_, b := a.do(local, "GET", "/value", "", "", nil)
+		return html.UnescapeString(string(b))
+	}
+	if !strings.Contains(page(), "Собраний пока нет") {
+		t.Error("без собраний нет подсказки")
+	}
+	id, _ := a.st.CreateSet(&catalog.Collection{Title: "Чехов. Собрание", VolumesAnnounced: 3})
+	ed, _ := a.st.AddEdition(&catalog.Edition{Title: "Чехов. Т. 2"})
+	c := catalog.Copy{EditionID: ed}
+	a.st.AddCopy(&c)
+	if err := a.st.PutInSet(ed, id, []catalog.PlaceRef{{Volume: 2}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.st.AddValuation(&catalog.Valuation{CopyID: c.ID, Amount: 400, AmountTo: 900}); err != nil {
+		t.Fatal(err)
+	}
+	p := page()
+	for _, want := range []string{"Комплекты", "Чехов. Собрание", "есть 1 из 3", "не хватает:</b> т. 1, т. 3",
+		"оценено 1 из 1 экз. на " + price(400, 900)} {
+		if !strings.Contains(p, want) {
+			t.Errorf("на «Ценности» нет %q", want)
+		}
+	}
+}
