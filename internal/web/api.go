@@ -132,7 +132,7 @@ func (s *server) apiAddBook(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest, "ждали JSON с карточкой книги")
 		return
 	}
-	if req.Year != 0 && (req.Year < 1400 || req.Year > 2100) { // те же границы, что у формы в веб-части
+	if req.Year != 0 && !yearOK(req.Year) {
 		apiError(w, http.StatusBadRequest, "год — четыре цифры, например 1987")
 		return
 	}

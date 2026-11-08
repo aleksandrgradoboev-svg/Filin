@@ -71,11 +71,12 @@ func New(st *catalog.Store, covers string, opts ...Option) (http.Handler, error)
 		"loanlist":  newLoanListData,
 		"rub":       rub,
 		"join":      strings.Join,
+		"percent":   percent,
 		"price":     price,
 		"grade":     catalog.GradeName,
 		"grades":    gradeScale, // шкала сверху вниз, с пояснениями
 	}
-	for _, p := range []string{"list", "book", "edition_form", "copy_form", "scan", "loans", "borrower", "value", "series", "genres", "person", "people", "devices", "alib"} {
+	for _, p := range []string{"list", "book", "edition_form", "copy_form", "scan", "loans", "borrower", "value", "series", "genres", "person", "people", "devices", "alib", "sets", "set"} {
 		t, err := template.New("").Funcs(funcs).ParseFS(files, "tmpl/layout.html", "tmpl/copyfields.html", "tmpl/loanlist.html", "tmpl/"+p+".html")
 		if err != nil {
 			return nil, err
@@ -116,6 +117,15 @@ func New(st *catalog.Store, covers string, opts ...Option) (http.Handler, error)
 	mux.HandleFunc("POST /valuation/{id}/delete", s.deleteValuation)
 	mux.HandleFunc("GET /value", s.value)
 	mux.HandleFunc("GET /series/{id}", s.series)
+	mux.HandleFunc("GET /sets", s.sets)
+	mux.HandleFunc("POST /sets", s.createSet)
+	mux.HandleFunc("GET /sets/{id}", s.set)
+	mux.HandleFunc("POST /sets/{id}/split", s.setAction(s.splitVolume))
+	mux.HandleFunc("POST /sets/{id}/place", s.setAction(s.addPlace))
+	mux.HandleFunc("POST /sets/{id}/delete", s.deleteSet)
+	mux.HandleFunc("POST /sets/{id}/remove", s.setAction(s.removePlace))
+	mux.HandleFunc("POST /place/{id}/unplace", s.unplace)
+	mux.HandleFunc("POST /book/{id}/set", s.putInSet)
 	mux.HandleFunc("GET /genres", s.genres)
 	mux.HandleFunc("GET /person", s.person)
 	mux.HandleFunc("POST /person", s.savePerson)
@@ -308,6 +318,9 @@ type bookPage struct {
 	ValueErr  string
 	ValueCopy int64 // то же для формы оценки
 	Genres    []catalog.Genre
+	Places    []catalog.EditionPlace // в каких собраниях стоит книга
+	Sets      []catalog.SetRow       // куда её можно поставить
+	SetErr    string
 }
 
 // bookCopy — экземпляр с историей выдач.
@@ -368,6 +381,14 @@ func (s *server) renderBook(w http.ResponseWriter, p bookPage) {
 		return
 	}
 	if p.Borrowers, err = s.st.Borrowers(); err != nil {
+		s.fail(w, err)
+		return
+	}
+	if p.Places, err = s.st.EditionPlaces(p.E.ID); err != nil {
+		s.fail(w, err)
+		return
+	}
+	if p.Sets, err = s.st.Sets(); err != nil {
 		s.fail(w, err)
 		return
 	}
@@ -544,7 +565,7 @@ func readEdition(r *http.Request, f *editionForm) {
 	f.Year = strings.TrimSpace(r.FormValue("year"))
 	if f.Year != "" {
 		y, err := strconv.Atoi(f.Year)
-		if err != nil || y < 1400 || y > 2100 {
+		if err != nil || !yearOK(y) {
 			f.Errors = append(f.Errors, "год — четыре цифры, например 1987")
 		}
 		f.E.Year = y

@@ -1,0 +1,37 @@
+{{define "content"}}
+<h1>Собрания сочинений</h1>
+<p class="muted">Многотомники и собрания: какие тома есть и каких не хватает. Считаются книги, а не тома —
+  том, изданный в двух книгах, это два места. Книга ставится на место в своей карточке: «📕 В собрание сочинений».
+  Издательские серии сюда не входят — у серии нет полноты, она показывается по ссылке из карточки.</p>
+
+{{if .Sets}}
+<ul class="sets">
+  {{range .Sets}}
+  <li><a href="/sets/{{.ID}}"><b>{{.Title}}</b></a>
+    <span class="muted">{{.Publisher}}{{if .YearFrom}}{{if .Publisher}}, {{end}}{{.YearFrom}}{{if and .YearTo (ne .YearTo .YearFrom)}}–{{.YearTo}}{{end}}{{end}}</span>
+    <div class="meter" title="есть {{.Have}} из {{.Places}}"><span style="width: {{percent .Have .Places}}%"></span></div>
+    <div class="muted">есть {{.Have}} из {{.Places}}{{if eq .Have .Places}} — <b>полный комплект</b>{{end}}</div>
+  </li>
+  {{end}}
+</ul>
+{{else}}<p class="muted">Собраний пока нет.</p>{{end}}
+
+<details class="lend" {{if .Err}}open{{end}}>
+  <summary>+ Собрание</summary>
+  {{with .Err}}<div class="note err">{{.}}</div>{{end}}
+  <form method="post" action="/sets" class="form">
+    <label>Название *<input name="title" required value="{{.Form.Title}}" placeholder="Диккенс Ч. Собрание сочинений в 30 томах"></label>
+    <div class="row3">
+      <label>Томов * <span class="hint">места т. 1 … т. N заведутся сами</span><input name="volumes" required inputmode="numeric" value="{{.Form.Volumes}}" placeholder="30"></label>
+      <label>Издательство<input name="publisher" value="{{.Form.Publisher}}" placeholder="ГИХЛ"></label>
+      <div class="row2">
+        <label>С года<input name="year_from" inputmode="numeric" maxlength="4" value="{{.Form.YearFrom}}"></label>
+        <label>По год<input name="year_to" inputmode="numeric" maxlength="4" value="{{.Form.YearTo}}"></label>
+      </div>
+    </div>
+    <label>Заметки<textarea name="notes" rows="2">{{.Form.Notes}}</textarea></label>
+    <p class="hint">Том вышел в двух книгах, есть «Указатель» или дополнительный том — поправите на странице собрания.</p>
+    <p><button class="btn">Завести собрание</button></p>
+  </form>
+</details>
+{{end}}

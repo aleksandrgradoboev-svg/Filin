@@ -10,6 +10,10 @@
     {{if or .E.Publisher .E.City .E.Year}}<dt>Издание</dt><dd>{{.E.City}}{{if and .E.City .E.Publisher}}: {{end}}{{.E.Publisher}}{{if .E.Year}}, {{.E.Year}}{{end}}</dd>{{end}}
     {{with .E.EditionNote}}<dt>Сведения</dt><dd>{{.}}</dd>{{end}}
     {{if .E.Series}}<dt>Серия</dt><dd><a href="/series/{{.E.SeriesID}}">{{.E.Series}}</a>{{with .E.SeriesNo}}, № {{.}}{{end}}</dd>{{end}}
+    {{with .Places}}<dt>Собрание</dt><dd>{{range $i, $p := .}}{{if $i}}; {{end}}<a href="/sets/{{$p.SetID}}">{{$p.SetTitle}}</a>, {{$p.Place}}
+      <form method="post" action="/place/{{$p.PlaceID}}/unplace" class="inline-del" onsubmit="return confirm('Снять книгу с этого места собрания? Сама книга останется.')">
+        <input type="hidden" name="edition" value="{{$.E.ID}}"><input type="hidden" name="back" value="book">
+        <button class="linklike" title="Снять с места">✕</button></form>{{end}}</dd>{{end}}
     {{with .Genres}}<dt>Жанры</dt><dd class="chips">{{range .}}<a class="chip" href="/?g={{.ID}}">{{.Name}}</a>{{end}}</dd>{{end}}
     {{if or .E.OrigTitle .E.OrigLanguage}}<dt>Оригинал</dt><dd>{{.E.OrigTitle}}{{if and .E.OrigTitle .E.OrigLanguage}} · {{end}}{{with .E.OrigLanguage}}пер. с {{.}}{{end}}</dd>{{end}}
     {{with .E.Language}}<dt>Язык</dt><dd>{{.}}</dd>{{end}}
@@ -29,6 +33,20 @@
   <p><a class="btn ghost" href="/book/{{.E.ID}}/edit">✏️ Править издание</a>
     <a class="btn ghost" href="/book/{{.E.ID}}/edit#rsl">🏛️ Дополнить из РГБ</a>
     <a class="btn ghost" href="/book/{{.E.ID}}/alib">📚 alib: аннотация и цены</a></p>
+  <details class="lend" id="set" {{if .SetErr}}open{{end}}>
+    <summary>📕 В собрание сочинений</summary>
+    {{with .SetErr}}<div class="note err">{{.}}</div>{{end}}
+    {{if .Sets}}
+    <form method="post" action="/book/{{.E.ID}}/set" class="form">
+      <div class="row3">
+        <label>Собрание<select name="set" required>{{range .Sets}}<option value="{{.ID}}">{{.Title}}{{if .Publisher}} · {{.Publisher}}{{end}}</option>{{end}}</select></label>
+        <label>Том <span class="hint">сдвоенный — «6-7»</span><input name="volumes" required placeholder="3" inputmode="numeric"></label>
+        <label>Книга в томе <span class="hint">если том разделён</span><input name="book" inputmode="numeric" placeholder="—"></label>
+      </div>
+      <p><button class="btn">Поставить на место</button> <a href="/sets">все собрания</a></p>
+    </form>
+    {{else}}<p class="muted">Собраний пока нет. <a href="/sets">Завести собрание</a> — название и сколько томов, места т. 1 … т. N появятся сами.</p>{{end}}
+  </details>
   </div>
 </article>
 
