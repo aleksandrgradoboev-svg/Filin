@@ -54,6 +54,36 @@ func TestSearchFoldsCyrillic(t *testing.T) {
 	}
 }
 
+// Дореформенные издания ищутся современным словом и наоборот: «Повѣсти Бѣлкина»
+// находятся по «повести белкина», а современная книга — по запросу в старой орфографии.
+func TestSearchOldOrthography(t *testing.T) {
+	s := newStore(t)
+	old, err := s.AddEdition(&Edition{Title: "Повѣсти покойнаго Ивана Петровича Бѣлкина",
+		People: []Person{{Name: "Пушкинъ А. С.", Role: "author"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	modern, err := s.AddEdition(&Edition{Title: "Война и мир", People: []Person{{Name: "Толстой Л. Н.", Role: "author"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for q, want := range map[string]int64{
+		"повести белкина": old,
+		"пушкин":          old, // конечный ъ в имени
+		"ПОВѢСТИ":         old,
+		"миръ":            modern, // запрос в старой орфографии — современная книга
+		"война и міръ":    modern,
+	} {
+		rows, total, err := s.Search(q, 10, 0)
+		if err != nil {
+			t.Fatalf("%q: %v", q, err)
+		}
+		if total != 1 || rows[0].ID != want {
+			t.Errorf("%q: получено %v (всего %d)", q, titles(rows), total)
+		}
+	}
+}
+
 func TestSearchPagesAndAuthors(t *testing.T) {
 	s := newStore(t)
 	seed(t, s)
