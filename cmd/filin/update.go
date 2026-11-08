@@ -158,11 +158,18 @@ func (u *updater) close() {
 // apply скачивает выпуск, делает копию библиотеки и ставит новую программу на место.
 // Пока не дошло до Swap, рабочая программа не тронута.
 func (u *updater) apply(exe string, rel update.Release, ua string) error {
-	// предел — только на скачивание: копия большой библиотеки с медленного диска идёт
-	// сколько идёт, обрывать её по часам — значит не обновиться никогда
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	err := update.Download(ctx, http.DefaultClient, rel, exe, ua)
-	cancel()
+	// общего предела по времени нет: на медленном канале 50 МБ идут и 20 минут, а предел в 15
+	// не пустил к 1.0.3 никого (обрыв и каждый раз с нуля). Скачивание само рвёт соединение,
+	// если долго нет данных, и докачивает недостающее (update.Fetch). Ход — в подписи значка.
+	log.Printf("обновление до %s: скачиваю %.1f МБ", rel.Version, float64(rel.Size)/(1<<20))
+	var shown atomic.Int64
+	err := update.Download(context.Background(), http.DefaultClient, rel, exe, ua, func(done, total int64) {
+		if mb := done >> 20; mb != shown.Load() {
+			shown.Store(mb)
+			desktop.SetTip(fmt.Sprintf("Филин: скачиваю %s — %d из %d МБ", rel.Version, mb, total>>20))
+		}
+	})
+	desktop.SetTip("")
 	if err != nil {
 		return fmt.Errorf("скачивание: %w", err)
 	}

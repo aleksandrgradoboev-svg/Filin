@@ -13,7 +13,6 @@ package update
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -134,45 +133,11 @@ func Newer(current, latest string) bool {
 func NewPath(exe string) string { return exe + ".new" }
 func OldPath(exe string) string { return exe + ".old" }
 
-// Download скачивает выпуск в NewPath(exe) и сверяет сумму. Несовпадение — файл удаляется:
-// недокачанная программа на месте рабочей хуже, чем отказ.
-func Download(ctx context.Context, c *http.Client, r Release, exe, ua string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.URL, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("User-Agent", ua)
-	resp, err := c.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("скачивание %s: %s", r.Version, resp.Status)
-	}
-	dst := NewPath(exe)
-	f, err := os.Create(dst)
-	if err != nil {
-		return fmt.Errorf("рядом с программой нельзя записать файл: %w", err)
-	}
-	h := sha256.New()
-	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(resp.Body, maxSize+1))
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err == nil && n != r.Size {
-		err = fmt.Errorf("скачалось %d байт из %d", n, r.Size)
-	}
-	if err == nil {
-		if got := hex.EncodeToString(h.Sum(nil)); got != r.SHA256 {
-			err = fmt.Errorf("сумма скачанного файла не сходится с выпуском: %s вместо %s", got, r.SHA256)
-		}
-	}
-	if err != nil {
-		os.Remove(dst)
-		return err
-	}
-	return nil
+// Download скачивает выпуск в NewPath(exe) и сверяет сумму: с докачкой и обрывом по
+// простою (Fetch). Недокачанное лежит в PartPath(NewPath(exe)), на месте .new — только
+// целый файл с верной суммой: недокачанная программа на месте рабочей хуже, чем отказ.
+func Download(ctx context.Context, c *http.Client, r Release, exe, ua string, progress Progress) error {
+	return Fetch(ctx, c, r.URL, NewPath(exe), r.Size, r.SHA256, ua, progress)
 }
 
 // Swap ставит скачанную программу на место работающей: exe → .old, .new → exe. Не вышло

@@ -49,6 +49,13 @@ func Tray(tip string, items []TrayItem, onQuit func()) {
 	onQuit()
 }
 
+// SetTip вне Windows — строка в консоль: значка нет.
+func SetTip(s string) {
+	if s != "" {
+		fmt.Println(s)
+	}
+}
+
 // Quit закрывает программу так же, как Ctrl+C.
 func Quit() {
 	select {
