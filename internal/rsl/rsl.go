@@ -402,8 +402,21 @@ func subjects(r Record) []string {
 			raw = append(raw, strings.Join(parts, " -- "))
 		}
 	}
+	// рубрик нет (старые записи, РКП 1990-х) — ключевые слова каталогизатора из 653:
+	// «Индийское народное восстание 1857-1859 гг. (т. 1) (х. л.)» → без пометок
+	if len(raw) == 0 {
+		for _, f := range r["653"] {
+			if t := strings.TrimSpace(reKeywordMark.ReplaceAllString(f.Sub("a"), "")); t != "" {
+				raw = append(raw, t)
+			}
+		}
+	}
 	return catalog.ParseSubjects(strings.Join(raw, "\n"))
 }
+
+// reKeywordMark — каталожные пометки в ключевых словах 653: «(х. л.)» — художественная
+// литература, «(т. 1)» — к какому тому относится.
+var reKeywordMark = regexp.MustCompile(`\s*\((?:х\.\s*л\.|т\.\s*[\dIVXLC]+(?:\s*[-–]\s*[\dIVXLC]+)?)\)`)
 
 // contents — содержание из 505: одной строкой в $a («Айвенго -- Примечания») или
 // по частям в $t («$t Белое движение… ; $t Вооруженные силы Юга России ; …»).

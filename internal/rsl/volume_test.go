@@ -231,6 +231,10 @@ func TestVolumeLinkWithoutWholeID(t *testing.T) {
 	if len(c.ISBNs) != 1 || c.ISBNs[0] != "5-7260-0481-7" {
 		t.Errorf("ISBN: %q", c.ISBNs)
 	}
+	// рубрик 650 у записи нет — тема из ключевых слов 653, без пометки «(х. л.)»
+	if len(e.Subjects) != 1 || e.Subjects[0] != "Детективные романы и рассказы" {
+		t.Errorf("темы: %q", e.Subjects)
+	}
 }
 
 // Жаколио, Собр. соч. в 4 т., т. 1: у тома своё заглавие, но сформулированное каталогизатором
@@ -244,6 +248,10 @@ func TestBracketedOwnTitle(t *testing.T) {
 	e := ToCard(rec, id).Edition
 	if e.Title != "В дебрях Индии. Роман" || e.Volume != "Т. 1" {
 		t.Errorf("название %q, том %q", e.Title, e.Volume)
+	}
+	if len(e.Subjects) != 2 || e.Subjects[0] != "Индийское народное восстание 1857-1859 гг." ||
+		e.Subjects[1] != "Приключенческие романы и рассказы" {
+		t.Errorf("темы из 653: %q", e.Subjects)
 	}
 }
 
