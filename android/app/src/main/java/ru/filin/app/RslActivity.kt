@@ -199,7 +199,8 @@ class RslActivity : ComponentActivity() {
         /**
          * По чему искать, по порядку до первой непустой выдачи — как web.rslAttempts на сервере:
          * с годом (он сужает выдачу в десятки раз: «Оцеола» без года — 680 записей), автор с
-         * годом, без года, только автор. ISBN — один запрос; год неправдоподобный — без него.
+         * годом, название и автор без года. Только автора без года не ищем. ISBN — один запрос;
+         * год неправдоподобный — без него.
          */
         fun attempts(query: String, fallback: String, year: Int): List<Pair<String, Int>> {
             if (query.startsWith("isbn:")) return listOf(query to 0)
@@ -210,7 +211,7 @@ class RslActivity : ComponentActivity() {
                 if (fallback.isNotEmpty()) out += fallback to y
             }
             if (query.isNotEmpty()) out += query to 0
-            if (fallback.isNotEmpty()) out += fallback to 0
+            // «только автор» без года — нет: у популярного автора сотни книг, в выдаче утонешь
             return out.distinct().ifEmpty { listOf(query to 0) }
         }
 
