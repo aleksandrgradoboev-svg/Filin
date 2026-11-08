@@ -63,7 +63,26 @@ const rslReader = `(function(){
   else setTimeout(tick,500);
 })();`
 
-var showWindow = syscall.NewLazyDLL("user32.dll").NewProc("ShowWindow")
+var (
+	showWindow = syscall.NewLazyDLL("user32.dll").NewProc("ShowWindow")
+	isWindow   = syscall.NewLazyDLL("user32.dll").NewProc("IsWindow")
+)
+
+// rslDataDir — где браузер поиска держит куки и кэш РГБ (не в папке библиотеки).
+// Переменная — для проверки: живой прогон берёт свой каталог, чтобы не мешать запущенному Филину.
+var rslDataDir = func() string {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		cache = os.TempDir() // иначе путь стал бы относительным — кэш браузера в папке библиотеки
+	}
+	return filepath.Join(cache, "Filin", "webview2")
+}
+
+// rslTimeout — предел на весь поиск, от запуска браузера до выдачи. Внутри браузерного
+// потока есть свой предохранитель (40 с на страницу), но он взводится только после запуска
+// браузера, а запуск в go-webview2 ждёт без предела. Без общего предела страница «Ищу в РГБ…»
+// крутилась бы вечно, а флаг «поиск идёт» не снимался бы до перезапуска Филина.
+var rslTimeout = 60 * time.Second
 
 // SearchRSL ищет в РГБ невидимым браузером: pageURL — страница поиска с запросом, fallback —
 // запасной запрос, если по основному пусто. Возвращает выдачу для списка «Это она».
@@ -89,19 +108,15 @@ func SearchRSL(pageURL, fallback string) (RSLResults, error) {
 		// а Terminate гасит цикл того потока, из которого вызван
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
-		cache, err := os.UserCacheDir()
-		if err != nil {
-			cache = os.TempDir() // иначе путь стал бы относительным — кэш браузера в папке библиотеки
-		}
 		w := webview2.NewWithOptions(webview2.WebViewOptions{
-			DataPath:      filepath.Join(cache, "Filin", "webview2"), // куки и кэш РГБ — не в папке библиотеки
+			DataPath:      rslDataDir(),
 			WindowOptions: webview2.WindowOptions{Title: "Филин — поиск в РГБ", Width: 1100, Height: 800},
 		})
 		if w == nil {
 			done <- result{err: errors.New("встроенный браузер Windows (WebView2) не запустился")}
 			return
 		}
-		defer w.Destroy()
+		defer closeWindow(w)
 		showWindow.Call(uintptr(w.Window()), 0) // SW_HIDE: человек видит список на странице Филина, а не сайт
 		var got string
 		if err := w.Bind("filinResults", func(js string) {
@@ -122,11 +137,38 @@ func SearchRSL(pageURL, fallback string) (RSLResults, error) {
 		stop.Stop()
 		done <- result{raw: got}
 	}()
-	r := <-done
+	var r result
+	select {
+	case r = <-done:
+	case <-time.After(rslTimeout):
+		// поток браузера завис (так зависал запуск WebView2 после брошенных окон): ждать его
+		// дальше незачем — поиск снимается, следующий начнётся с нового браузера
+		return RSLResults{}, errors.New("РГБ не ответила за минуту — попробуйте ещё раз; если повторится, перезапустите Филина")
+	}
 	if r.err != nil {
 		return RSLResults{}, r.err
 	}
 	return parseRSLResults(r.raw)
+}
+
+// closeWindow закрывает окно поиска вместе с его браузером. Destroy в go-webview2 только
+// ставит окну WM_CLOSE в очередь, а цикл сообщений к этому времени уже кончился: окно и
+// браузер оставались жить до выхода Филина, и после нескольких поисков запуск следующего
+// браузера зависал. Поэтому цикл крутится ещё раз — до WM_DESTROY, который и завершает его
+// (wndproc библиотеки: WM_CLOSE → DestroyWindow → WM_DESTROY → Terminate). Вызывается
+// в потоке браузера.
+func closeWindow(w webview2.WebView) {
+	hwnd := uintptr(w.Window())
+	alive := func() bool { ok, _, _ := isWindow.Call(hwnd); return ok != 0 }
+	w.Destroy()
+	// Цикл крутится, пока окно живо: запоздалый Terminate от предохранителя страницы мог уже
+	// стоять в очереди раньше WM_CLOSE и выйти из цикла до закрытия. Каждый круг — со своей
+	// страховкой: WM_CLOSE потерялся — цикл не ждёт вечно.
+	for i := 0; i < 3 && alive(); i++ {
+		stop := time.AfterFunc(5*time.Second, func() { w.Dispatch(func() { w.Terminate() }) })
+		w.Run()
+		stop.Stop()
+	}
 }
 
 // parseRSLResults разбирает ответ скрипта чтения выдачи.
