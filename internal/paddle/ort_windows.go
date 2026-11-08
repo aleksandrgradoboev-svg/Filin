@@ -20,26 +20,26 @@ import (
 const ortAPIVersion = 23
 
 const (
-	fnGetErrorMessage                 = 2
-	fnCreateEnv                       = 3
-	fnCreateSessionFromArray          = 8
-	fnRun                             = 9
-	fnCreateSessionOptions            = 10
+	fnGetErrorMessage                  = 2
+	fnCreateEnv                        = 3
+	fnCreateSessionFromArray           = 8
+	fnRun                              = 9
+	fnCreateSessionOptions             = 10
 	fnSetSessionGraphOptimizationLevel = 23
-	fnSetIntraOpNumThreads            = 24
-	fnCreateTensorWithDataAsOrtValue  = 49
-	fnGetTensorMutableData            = 51
-	fnGetDimensionsCount              = 61
-	fnGetDimensions                   = 62
-	fnGetTensorTypeAndShape           = 65
-	fnCreateCpuMemoryInfo             = 69
-	fnReleaseEnv                      = 92
-	fnReleaseStatus                   = 93
-	fnReleaseMemoryInfo               = 94
-	fnReleaseSession                  = 95
-	fnReleaseValue                    = 96
-	fnReleaseTensorTypeAndShapeInfo   = 99
-	fnReleaseSessionOptions           = 100
+	fnSetIntraOpNumThreads             = 24
+	fnCreateTensorWithDataAsOrtValue   = 49
+	fnGetTensorMutableData             = 51
+	fnGetDimensionsCount               = 61
+	fnGetDimensions                    = 62
+	fnGetTensorTypeAndShape            = 65
+	fnCreateCpuMemoryInfo              = 69
+	fnReleaseEnv                       = 92
+	fnReleaseStatus                    = 93
+	fnReleaseMemoryInfo                = 94
+	fnReleaseSession                   = 95
+	fnReleaseValue                     = 96
+	fnReleaseTensorTypeAndShapeInfo    = 99
+	fnReleaseSessionOptions            = 100
 )
 
 const (
@@ -139,12 +139,12 @@ func cString(p uintptr) string {
 
 // session — загруженная модель с одним входом и одним выходом (так устроены модели PaddleOCR).
 type session struct {
-	rt       *runtimeORT
-	h        uintptr
-	in, out  *byte
-	inName   string
-	outName  string
-	mu       sync.Mutex // одна сессия — один запуск за раз: так проще и памяти меньше
+	rt      *runtimeORT
+	h       uintptr
+	in, out *byte
+	inName  string
+	outName string
+	mu      sync.Mutex // одна сессия — один запуск за раз: так проще и памяти меньше
 }
 
 func (r *runtimeORT) newSession(model []byte, inName, outName string, threads int) (*session, error) {
