@@ -284,7 +284,7 @@ func ToCard(r Record, id string) Card {
 	if f, ok := r.first("100"); ok {
 		if n := personName(f.Sub("a")); n != "" {
 			e.People = append(e.People, catalog.Person{Name: n, Role: "author"})
-			if d := strings.TrimSpace(f.Sub("d")); d != "" {
+			if d := strings.TrimRight(strings.TrimSpace(f.Sub("d")), ". "); d != "" { // «1890-1976.» — точка ISBD
 				c.Lives[n] = strings.ReplaceAll(d, "-", "–")
 			}
 		}
@@ -292,7 +292,7 @@ func ToCard(r Record, id string) Card {
 	for _, f := range r["700"] {
 		if n := personName(f.Sub("a")); n != "" {
 			e.People = append(e.People, catalog.Person{Name: n, Role: role(f)})
-			if d := strings.TrimSpace(f.Sub("d")); d != "" {
+			if d := strings.TrimRight(strings.TrimSpace(f.Sub("d")), ". "); d != "" { // «1890-1976.» — точка ISBD
 				c.Lives[n] = strings.ReplaceAll(d, "-", "–")
 			}
 		}
@@ -315,6 +315,7 @@ func ToCard(r Record, id string) Card {
 				e.Title += ". " + sub
 			}
 		}
+		e.Title = unbracket(e.Title)
 		e.Volume = strings.TrimSpace(strings.Join(strings.Fields(f.Sub("n")+" "+trimISBD(f.Sub("p"))), " "))
 	}
 	if f, ok := r.first("250"); ok {
@@ -424,6 +425,20 @@ func contents(f Field) string {
 // reNoiseSubtitle — «сведения к заглавию», которые названием не являются: число томов
 // («в двух томах», «в 20 т.») и пометка о переводе («пер. с англ», «перевод с английского»):
 // том и язык оригинала карточка хранит в своих полях, а переводчика — среди людей.
-var reNoiseSubtitle = regexp.MustCompile(`(?i)^(в\s+\S+\s+(томах|т\.?|книгах|кн\.?)|(пер\.|перевод)\s+с\s+\S+)$`)
+// Каталогизатор, дописавший сведения от себя, берёт их в квадратные скобки: «[Пер. с англ.]»,
+// «[Перевод]» — тот же шум.
+var reNoiseSubtitle = regexp.MustCompile(`(?i)^(в\s+\S+\s+(томах|т\.?|книгах|кн\.?)|(пер\.|перевод)(\s+с\s+\S+)?)$`)
 
-func noiseSubtitle(s string) bool { return reNoiseSubtitle.MatchString(strings.TrimSpace(s)) }
+func noiseSubtitle(s string) bool {
+	return reNoiseSubtitle.MatchString(strings.TrimSpace(strings.Trim(strings.TrimSpace(s), "[]")))
+}
+
+// unbracket снимает квадратные скобки с заглавия целиком: «[В дебрях Индии. Роман]» — заглавие,
+// которого нет на книге, его сформулировал каталогизатор; для полки это просто название.
+// Скобки внутри («Атлас [Карты]») не трогаются.
+func unbracket(s string) string {
+	if strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]") && strings.Count(s, "[") == 1 && strings.Count(s, "]") == 1 {
+		return strings.TrimSpace(s[1 : len(s)-1])
+	}
+	return s
+}

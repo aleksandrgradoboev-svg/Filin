@@ -32,6 +32,35 @@ func WholeID(rec Record) string {
 	return "01" + w
 }
 
+// reBareVolume — заглавие тома, в котором нет ничего, кроме номера: «[1]», «Т. 2», «Кн. 3», «II», «3».
+// Голое число — не длиннее двух цифр: «1984» — это название. Римские — только прописные: «Ill» — слово.
+var reBareVolume = regexp.MustCompile(`^(?:\[\s*[\dIVXLC]+(?:\s*[-–]\s*[\dIVXLC]+)?\s*\]|(?i:т|том|кн|книга|ч|часть|вып)\.?\s*[\dIVXLC]+(?:\s*[-–]\s*[\dIVXLC]+)?|\d{1,2}|[IVXLC]{1,5})\.?$`)
+
+// LinkOnlyVolume — запись тома, у которой есть ссылка 773 на всё издание, но без номера той
+// записи ($w), а своё заглавие — только номер. Так РГБ описала старые многотомники
+// (Кристи, «Избранные произведения», Гермес, 1991: «245 $a [1]», название — в «773 $t»).
+// Без этого заглавием карточки становится «[1]».
+func LinkOnlyVolume(rec Record) bool {
+	l, ok := rec.first("773")
+	if !ok || strings.TrimSpace(l.Sub("t")) == "" {
+		return false
+	}
+	t, ok := rec.first("245")
+	return !ok || strings.TrimSpace(t.Sub("a")) == "" || reBareVolume.MatchString(strings.TrimSpace(t.Sub("a")))
+}
+
+// reBareNumber — номер без слова «Т.»: «[1]», «1», «II», «6-7».
+var reBareNumber = regexp.MustCompile(`^\[?\s*([\dIVXLC]+(?:\s*[-–]\s*[\dIVXLC]+)?)\s*\]?\.?$`)
+
+// volumeLabel — номер тома так, как его пишет Филин: «[1]» → «Т. 1»; прочее — как есть.
+func volumeLabel(s string) string {
+	s = strings.TrimSpace(s)
+	if m := reBareNumber.FindStringSubmatch(s); m != nil {
+		return "Т. " + m[1]
+	}
+	return s
+}
+
 // Card читает запись и собирает карточку. Запись тома дополняется записью всего издания;
 // не ответила РГБ на вторую — карточка собирается из ссылки 773 в самой записи тома.
 func (c *Client) Card(ctx context.Context, id string) (Card, error) {
@@ -39,16 +68,14 @@ func (c *Client) Card(ctx context.Context, id string) (Card, error) {
 	if err != nil {
 		return Card{}, err
 	}
-	wid := WholeID(rec)
-	if wid == "" {
-		return ToCard(rec, id), nil
-	}
-	whole, err := c.Fetch(ctx, wid)
-	if err != nil {
-		log.Printf("РГБ: запись издания %s для тома %s не прочитана, карточка из ссылки тома: %v", wid, id, err)
-		whole = nil
-	}
-	return VolumeCard(rec, id, whole), nil
+	return assemble(rec, id, func(wid string) Record {
+		whole, err := c.Fetch(ctx, wid)
+		if err != nil {
+			log.Printf("РГБ: запись издания %s для тома %s не прочитана, карточка из ссылки тома: %v", wid, id, err)
+			return nil
+		}
+		return whole
+	}), nil
 }
 
 // PeekCard — карточка из недавно прочитанных записей, без обращения к РГБ.
@@ -57,12 +84,19 @@ func (c *Client) PeekCard(id string) (Card, bool) {
 	if !ok {
 		return Card{}, false
 	}
-	wid := WholeID(rec)
-	if wid == "" {
-		return ToCard(rec, id), true
+	return assemble(rec, id, func(wid string) Record { whole, _ := c.Peek(wid); return whole }), true
+}
+
+// assemble — карточка записи: обычная; тома — поверх записи издания (whole достаёт её по
+// номеру, nil — не достал) или поверх ссылки 773, когда номера издания у тома нет.
+func assemble(rec Record, id string, whole func(wid string) Record) Card {
+	if wid := WholeID(rec); wid != "" {
+		return VolumeCard(rec, id, whole(wid))
 	}
-	whole, _ := c.Peek(wid)
-	return VolumeCard(rec, id, whole), true
+	if LinkOnlyVolume(rec) {
+		return VolumeCard(rec, id, nil)
+	}
+	return ToCard(rec, id)
 }
 
 // VolumeCard — карточка тома: основа из записи всего издания (whole; nil — из 773 тома),
@@ -78,7 +112,7 @@ func VolumeCard(vol Record, id string, whole Record) Card {
 	e, ve := &c.Edition, v.Edition
 
 	// «Т. 2» из заглавия тома — номер тома, а не название; $n/$p тома — его часть
-	e.Volume = strings.Join(nonEmpty(ve.Title, ve.Volume), ". ")
+	e.Volume = strings.Join(nonEmpty(volumeLabel(ve.Title), ve.Volume), ". ")
 	if e.Volume == "" {
 		if f, ok := vol.first("773"); ok {
 			e.Volume = trimISBD(f.Sub("g"))
@@ -188,6 +222,7 @@ func fromLink(vol Record, id string) Card {
 		}
 	}
 	e.EditionNote = trimISBD(f.Sub("b"))
+	e.Format = trimISBD(f.Sub("h")) // «22 см»
 	if d := f.Sub("d"); d != "" { // «Минск : Харвест, печ. 2017»
 		// без « : » издательства в ссылке нет — город и год не угадываем по запятым
 		if place, rest, found := strings.Cut(d, " : "); found {
