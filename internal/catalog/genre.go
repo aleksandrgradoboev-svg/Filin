@@ -47,7 +47,12 @@ func writeGenres(tx *sql.Tx, id int64, genres []string) error {
 			return err
 		}
 	}
-	// свой жанр без единой книги — опечатка, оставшаяся в подсказках; справочный остаётся
+	return dropOrphanGenres(tx)
+}
+
+// dropOrphanGenres убирает свои жанры без единой книги — опечатки, оставшиеся в подсказках;
+// справочные (LiveLib) остаются.
+func dropOrphanGenres(tx *sql.Tx) error {
 	_, err := tx.Exec(`DELETE FROM genre WHERE livelib = 0 AND id NOT IN (SELECT genre_id FROM edition_genre)`)
 	return err
 }

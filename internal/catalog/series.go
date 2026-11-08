@@ -20,13 +20,7 @@ func writeSeries(tx *sql.Tx, id int64, e *Edition) error {
 		id); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM collection_slot WHERE id NOT IN (SELECT slot_id FROM slot_edition)
-		AND collection_id IN (SELECT id FROM collection WHERE kind = 'series')`); err != nil {
-		return err
-	}
-	// серия без единой книги — опечатка, оставшаяся в подсказках; убрать
-	if _, err := tx.Exec(`DELETE FROM collection WHERE kind = 'series'
-		AND id NOT IN (SELECT collection_id FROM collection_slot)`); err != nil {
+	if err := dropEmptySeries(tx); err != nil {
 		return err
 	}
 	title := strings.Join(strings.Fields(e.Series), " ")
@@ -63,6 +57,19 @@ func writeSeries(tx *sql.Tx, id int64, e *Edition) error {
 		return err
 	}
 	_, err = tx.Exec(`INSERT OR IGNORE INTO slot_edition (slot_id, edition_id) VALUES (?, ?)`, slot, id)
+	return err
+}
+
+// dropEmptySeries убирает опустевшие места серий и серии без единой книги — после того,
+// как книгу сняли с серии или удалили.
+func dropEmptySeries(tx *sql.Tx) error {
+	if _, err := tx.Exec(`DELETE FROM collection_slot WHERE id NOT IN (SELECT slot_id FROM slot_edition)
+		AND collection_id IN (SELECT id FROM collection WHERE kind = 'series')`); err != nil {
+		return err
+	}
+	// серия без единой книги — опечатка, оставшаяся в подсказках; убрать
+	_, err := tx.Exec(`DELETE FROM collection WHERE kind = 'series'
+		AND id NOT IN (SELECT collection_id FROM collection_slot)`)
 	return err
 }
 
