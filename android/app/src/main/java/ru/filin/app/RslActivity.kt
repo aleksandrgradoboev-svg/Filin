@@ -45,11 +45,15 @@ class RslActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val query = intent.getStringExtra(EXTRA_QUERY).orEmpty()
-        current = query
-        val url = "https://search.rsl.ru/ru/search#q=" + Uri.encode(query)
+        attempts = attempts(
+            intent.getStringExtra(EXTRA_QUERY).orEmpty(),
+            intent.getStringExtra(EXTRA_FALLBACK).orEmpty(),
+            intent.getIntExtra(EXTRA_YEAR, 0),
+        )
+        current = describe(attempts[0])
+        val url = "https://search.rsl.ru/ru/search#" + fragment(attempts[0])
 
-        status = text("Ищу в РГБ: $query", muted = true)
+        status = text("Ищу в РГБ: $current", muted = true)
         err = errorText()
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val paste = field("или ссылка на запись РГБ из Chrome")
@@ -129,26 +133,30 @@ class RslActivity : ComponentActivity() {
 
     private var current = ""
     private var stale: String? = null
+    private var attempts: List<Pair<String, Int>> = emptyList()
+    private var attempt = 0
 
     private fun show(r: JSONObject) {
         val items = r.getJSONArray("items")
         list.removeAllViews()
         if (items.length() == 0) {
-            val fallback = intent.getStringExtra(EXTRA_FALLBACK).orEmpty()
-            if (fallback.isNotEmpty() && current != fallback) {
-                // название могло распознаться с ошибкой («рен!» вместо «Солдат») — ищем всё у автора
-                status.text = "По «$current» ничего. Ищу все книги: $fallback"
+            if (attempt + 1 < attempts.size) {
+                // название могло распознаться с ошибкой («рен!» вместо «Солдат»), год — не тот:
+                // запрос ослабляется по шагам, как на компьютере (web.rslAttempts)
+                val was = current
+                attempt++
+                current = describe(attempts[attempt])
+                status.text = "По «$was» ничего. Ищу: $current"
                 stale = r.optString("info")
-                current = fallback
                 polls = 0
-                web.evaluateJavascript("location.hash='#q='+encodeURIComponent(${JSONObject.quote(fallback)})", null)
+                web.evaluateJavascript("location.hash=${JSONObject.quote("#" + fragment(attempts[attempt]))}", null)
                 poll()
                 return
             }
-            status.text = "В РГБ ничего не нашлось по «$current». Поправьте название или автора в форме — или поищите на сайте."
+            status.text = "В РГБ ничего не нашлось по «$current». Поправьте название, автора или год в форме — или поищите на сайте."
             return
         }
-        val note = if (current == intent.getStringExtra(EXTRA_QUERY)) "" else " (по «$current» — проверьте название в форме)"
+        val note = if (attempt == 0) "" else " (по «$current» — проверьте название и год в форме)"
         status.text = r.optString("info").substringBefore(",").ifEmpty { "Найдено" } + note + ". Выберите своё издание:"
         for (i in 0 until items.length()) {
             val item = items.getJSONObject(i)
@@ -186,6 +194,32 @@ class RslActivity : ComponentActivity() {
     companion object {
         const val EXTRA_QUERY = "query"
         const val EXTRA_FALLBACK = "fallback" // запрос, если по основному пусто (только автор)
+        const val EXTRA_YEAR = "year" // год издания: фильтр «с … по …» поиска РГБ; 0 — без него
+
+        /**
+         * По чему искать, по порядку до первой непустой выдачи — как web.rslAttempts на сервере:
+         * с годом (он сужает выдачу в десятки раз: «Оцеола» без года — 680 записей), автор с
+         * годом, без года, только автор. ISBN — один запрос; год неправдоподобный — без него.
+         */
+        fun attempts(query: String, fallback: String, year: Int): List<Pair<String, Int>> {
+            if (query.startsWith("isbn:")) return listOf(query to 0)
+            val y = year.takeIf { it in 1700..(java.time.Year.now().value + 1) } ?: 0
+            val out = mutableListOf<Pair<String, Int>>()
+            if (y > 0) {
+                if (query.isNotEmpty()) out += query to y
+                if (fallback.isNotEmpty()) out += fallback to y
+            }
+            if (query.isNotEmpty()) out += query to 0
+            if (fallback.isNotEmpty()) out += fallback to 0
+            return out.distinct().ifEmpty { listOf(query to 0) }
+        }
+
+        /** Часть адреса поиска РГБ после «#»: год — фильтром yf/yt, как пишет его сама страница. */
+        fun fragment(a: Pair<String, Int>): String =
+            (if (a.second > 0) "yf=${a.second}&yt=${a.second}&" else "") + "q=" + Uri.encode(a.first)
+
+        /** Как показать попытку человеку: «title:(…) author:Рид, 1983 г.». */
+        fun describe(a: Pair<String, Int>): String = a.first + if (a.second > 0) ", ${a.second} г." else ""
         const val EXTRA_RECORD = "record"
 
         // Читает выдачу со страницы поиска РГБ: номер записи, автор, описание издания.

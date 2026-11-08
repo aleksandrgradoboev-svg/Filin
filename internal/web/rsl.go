@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/aleksandrgradoboev-svg/filin/internal/catalog"
 	"github.com/aleksandrgradoboev-svg/filin/internal/isbn"
@@ -66,25 +67,85 @@ func rslQuery(e catalog.Edition) (q, fallback string) {
 	return strings.Join(parts, " "), fallback
 }
 
-// rslPageURL — страница поиска РГБ с запросом (одно место для формы, окна на компьютере):
-// поля isbn:/title:/author: — без них поиск тонет в полнотексте оцифровок. isbns — номера из
-// поля формы новой книги (со сканера), в карточке их ещё нет.
-func rslPageURL(e catalog.Edition, isbns string) string {
-	q, _ := rslQuery(e)
-	if good, _ := catalog.ParseISBNs(isbns); len(good) > 0 && good[0].Valid {
-		q = "isbn:" + good[0].Norm
+// rslPageBase — страница поиска РГБ; запрос и фильтры — в части адреса после «#».
+const rslPageBase = "https://search.rsl.ru/ru/search#"
+
+// rslFragment — часть адреса поиска РГБ после «#»: запрос q и, если год известен, фильтр
+// «год издания с … по …» (yf/yt — так его пишет сама страница РГБ; поля года в языке
+// запросов нет). Так же строит RslActivity на телефоне.
+func rslFragment(q string, year int) string {
+	f := "q=" + strings.ReplaceAll(url.QueryEscape(q), "+", "%20")
+	if year > 0 {
+		f = fmt.Sprintf("yf=%d&yt=%d&", year, year) + f
 	}
-	return "https://search.rsl.ru/ru/search#q=" + strings.ReplaceAll(url.QueryEscape(q), "+", "%20")
+	return f
+}
+
+// rslYear — год издания для фильтра поиска: только правдоподобный (распознавание могло
+// прочитать «1983» как «7983»).
+func rslYear(y int) int {
+	if y >= 1700 && y <= time.Now().Year()+1 {
+		return y
+	}
+	return 0
+}
+
+// rslAttempts — по чему искать в РГБ, по порядку, до первой непустой выдачи. Год сужает выдачу
+// в десятки раз («Оцеола» Майн Рида: 680 записей без года), поэтому сначала с ним:
+// название + автор + год, автор + год (название могло распознаться с ошибкой), без года (год
+// мог прочитаться не тот), только автор. ISBN — один запрос, точнее него ничего нет.
+// isbns — номера из поля формы новой книги (со сканера), в карточке их ещё нет.
+func rslAttempts(e catalog.Edition, isbns string) []string {
+	if good, _ := catalog.ParseISBNs(isbns); len(good) > 0 && good[0].Valid {
+		return []string{rslFragment("isbn:"+good[0].Norm, 0)}
+	}
+	q, fb := rslQuery(e)
+	if strings.HasPrefix(q, "isbn:") {
+		return []string{rslFragment(q, 0)}
+	}
+	var out []string
+	add := func(q string, y int) {
+		if q == "" {
+			return
+		}
+		f := rslFragment(q, y)
+		for _, have := range out {
+			if have == f {
+				return
+			}
+		}
+		out = append(out, f)
+	}
+	if y := rslYear(e.Year); y > 0 {
+		add(q, y)
+		add(fb, y)
+	}
+	add(q, 0)
+	add(fb, 0)
+	return out
+}
+
+// rslPageURL — страница поиска РГБ с первой попыткой (одно место для формы, окна на компьютере):
+// поля isbn:/title:/author: — без них поиск тонет в полнотексте оцифровок.
+func rslPageURL(e catalog.Edition, isbns string) string {
+	a := rslAttempts(e, isbns)
+	if len(a) == 0 {
+		return rslPageBase + "q="
+	}
+	return rslPageBase + a[0]
 }
 
 // rslSearchURL — ссылка «Дополнить из РГБ» в карточке: /book/{id}/rsl с готовым запросом.
-// Приложение на телефоне перехватывает её и ищет своим браузером; в обычном браузере
-// сервер ведёт на форму дополнения.
+// Приложение на телефоне перехватывает её и ищет своим браузером (по q, fallback и году —
+// попытки строит само, как rslAttempts); в обычном браузере сервер ведёт на форму дополнения.
 func rslSearchURL(e catalog.Edition) string {
 	q, fb := rslQuery(e)
 	v := url.Values{"q": {q}}
 	if fb != "" {
 		v.Set("fallback", fb)
+	}
+	if y := rslYear(e.Year); y > 0 && !strings.HasPrefix(q, "isbn:") {
+		v.Set("year", fmt.Sprint(y))
 	}
 	return fmt.Sprintf("/book/%d/rsl?%s", e.ID, v.Encode())
 }
@@ -105,8 +166,9 @@ type RSLResults struct {
 }
 
 // RSLSearcher — поиск РГБ на компьютере (desktop.SearchRSL): невидимый браузер открывает
-// страницу поиска pageURL и читает выдачу, как телефон; fallback — запасной запрос.
-type RSLSearcher func(pageURL, fallback string) (RSLResults, error)
+// страницу поиска pageURL и читает выдачу, как телефон; пусто — пробует следующие попытки
+// (части адреса после «#», rslAttempts) по очереди.
+type RSLSearcher func(pageURL string, next []string) (RSLResults, error)
 
 // WithRSLSearcher включает поиск РГБ со списком на компьютере. Без него (filin serve, не
 // Windows) «Дополнить из РГБ» ведёт на форму со ссылкой на поиск в браузере.
@@ -138,8 +200,12 @@ func (s *server) rslSearch(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	q, fb := rslQuery(e) // запрос — из карточки, а не из адреса: ищем только по своей книге
-	page := rslPageURL(e, "")
+	q, _ := rslQuery(e) // запрос — из карточки, а не из адреса: ищем только по своей книге
+	attempts := rslAttempts(e, "")
+	page, next := rslPageBase+"q=", []string(nil)
+	if len(attempts) > 0 {
+		page, next = rslPageBase+attempts[0], attempts[1:]
+	}
 	s.rslMu.Lock()
 	if s.rslJobs == nil {
 		s.rslJobs = map[int64]*rslJob{}
@@ -150,7 +216,7 @@ func (s *server) rslSearch(w http.ResponseWriter, r *http.Request) {
 		job := &rslJob{}
 		s.rslJobs[id] = job
 		go func() {
-			res, err := s.rslSearcher(page, fb)
+			res, err := s.rslSearcher(page, next)
 			s.rslMu.Lock()
 			defer s.rslMu.Unlock()
 			job.done, job.res = true, res

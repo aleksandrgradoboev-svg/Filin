@@ -50,7 +50,7 @@ func TestLiveRSLSearchesInARow(t *testing.T) {
 	page := "https://search.rsl.ru/ru/search#q=isbn%3A9789851840881"
 	for i := 1; i <= n; i++ {
 		start := time.Now()
-		res, err := SearchRSL(page, "")
+		res, err := SearchRSL(page, nil)
 		if err != nil {
 			t.Fatalf("поиск %d: %v", i, err)
 		}

@@ -239,8 +239,8 @@ func rslSearch() []web.Option {
 }
 
 // searchRSL — поиск РГБ невидимым браузером (desktop) в виде, понятном веб-части.
-func searchRSL(pageURL, fallback string) (web.RSLResults, error) {
-	r, err := desktop.SearchRSL(pageURL, fallback)
+func searchRSL(pageURL string, next []string) (web.RSLResults, error) {
+	r, err := desktop.SearchRSL(pageURL, next)
 	out := web.RSLResults{Query: r.Query, Info: r.Info}
 	for _, f := range r.Items {
 		out.Items = append(out.Items, web.RSLFound{ID: f.ID, Author: f.Author, Info: f.Info})

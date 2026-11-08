@@ -217,14 +217,49 @@ func TestRSLQuery(t *testing.T) {
 	}
 }
 
+// Год сужает поиск (у «Оцеолы» Майн Рида без года — 680 записей): сначала с годом, потом
+// ослабляя — автор с годом, без года, только автор. ISBN — один запрос.
+func TestRSLAttempts(t *testing.T) {
+	reid := catalog.Edition{Title: "Оцеола, вождь семинолов", Year: 1983,
+		People: []catalog.Person{{Name: "Рид М.", Role: "author"}}}
+	got := rslAttempts(reid, "")
+	want := []string{
+		"yf=1983&yt=1983&q=" + strings.ReplaceAll(url.QueryEscape("title:(Оцеола, вождь семинолов) author:Рид"), "+", "%20"),
+		"yf=1983&yt=1983&q=" + strings.ReplaceAll(url.QueryEscape("author:Рид"), "+", "%20"),
+		"q=" + strings.ReplaceAll(url.QueryEscape("title:(Оцеола, вождь семинолов) author:Рид"), "+", "%20"),
+		"q=" + strings.ReplaceAll(url.QueryEscape("author:Рид"), "+", "%20"),
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("попытки:\n%s\nждали:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	// год распознан неправдоподобный — без фильтра
+	reid.Year = 7983
+	if a := rslAttempts(reid, ""); strings.Contains(strings.Join(a, " "), "yf=") {
+		t.Errorf("неправдоподобный год в фильтре: %q", a)
+	}
+	// ISBN со сканера — один запрос, без года
+	reid.Year = 1983
+	if a := rslAttempts(reid, "978-5-04-243118-0"); len(a) != 1 || a[0] != "q=isbn%3A9785042431180" {
+		t.Errorf("по ISBN: %q", a)
+	}
+	// ссылка для телефона несёт год
+	reid.ID = 7
+	if u := rslSearchURL(reid); !strings.Contains(u, "year=1983") {
+		t.Errorf("ссылка без года: %s", u)
+	}
+}
+
 // «Дополнить из РГБ» в браузере на компьютере — как на телефоне: поиск (здесь — подставной
 // невидимый браузер) по запросу из карточки, на странице Филина — список «Это она».
 func TestRSLSearchList(t *testing.T) {
-	type call struct{ page, fb string }
+	type call struct {
+		page string
+		next []string
+	}
 	calls := make(chan call, 4)
 	answer := make(chan func() (RSLResults, error), 4)
-	search := func(page, fb string) (RSLResults, error) {
-		calls <- call{page, fb}
+	search := func(page string, next []string) (RSLResults, error) {
+		calls <- call{page, next}
 		return (<-answer)()
 	}
 	a := newNetApp(t, WithRSLSearcher(search))
@@ -253,8 +288,8 @@ func TestRSLSearchList(t *testing.T) {
 	}
 	c := <-calls
 	want := "https://search.rsl.ru/ru/search#q=" + strings.ReplaceAll(url.QueryEscape("title:(Водители фрегатов) author:Чуковский"), "+", "%20")
-	if c.page != want || c.fb != "author:Чуковский" {
-		t.Errorf("поиск: %q / %q", c.page, c.fb)
+	if c.page != want || len(c.next) != 1 || c.next[0] != rslFragment("author:Чуковский", 0) {
+		t.Errorf("поиск: %q / %q", c.page, c.next)
 	}
 	// второе нажатие, пока ищем, второго поиска не запускает
 	a.do(local, "GET", book+"/rsl", "", "", nil)
