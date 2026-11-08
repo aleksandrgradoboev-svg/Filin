@@ -168,3 +168,72 @@ func TestAlibGradesMigrationKeepsData(t *testing.T) {
 		r.Close()
 	}
 }
+
+// Ревью ядра 29.10, миграция 0011: триггер edition_touch сам делает UPDATE той же строки и при
+// включённом recursive_triggers уходил в бесконечную рекурсию — любая правка издания падала.
+// Теперь правки проходят при любом режиме, и updated_at обновляется.
+func TestTouchTriggerAnyRecursiveMode(t *testing.T) {
+	d, err := Open(filepath.Join(t.TempDir(), "filin.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	ctx := context.Background()
+	for i, mode := range []string{"OFF", "ON"} {
+		conn, err := d.Conn(ctx) // режим — у соединения: правки на нём же
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn.ExecContext(ctx, `PRAGMA recursive_triggers = `+mode)
+		id := i + 1
+		// свежая запись: updated_at — уже «сейчас»; и старая — из 2000 года
+		if _, err := conn.ExecContext(ctx, `INSERT INTO edition (id, title) VALUES (?, 'А')`, id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := conn.ExecContext(ctx, `INSERT INTO edition (id, title, updated_at) VALUES (?, 'А', '2000-01-01T00:00:00Z')`, id+10); err != nil {
+			t.Fatal(err)
+		}
+		for _, row := range []int{id, id + 10} {
+			for _, title := range []string{"Б", "В"} { // две правки в одну секунду
+				if _, err := conn.ExecContext(ctx, `UPDATE edition SET title = ? WHERE id = ?`, title, row); err != nil {
+					t.Fatalf("recursive_triggers=%s, издание %d, правка %q: %v", mode, row, title, err)
+				}
+			}
+		}
+		var at string
+		conn.QueryRowContext(ctx, `SELECT updated_at FROM edition WHERE id = ?`, id+10).Scan(&at)
+		if at == "2000-01-01T00:00:00Z" {
+			t.Errorf("recursive_triggers=%s: updated_at не обновился", mode)
+		}
+		conn.Close()
+	}
+}
+
+// Ревью ядра 29.10: enableWAL повторяет только на SQLITE_BUSY. SQLITE_LOCKED бывает при общем
+// кэше или внутри одного соединения — у нас ни того, ни другого. Проверка нагрузкой: много
+// одновременных открытий свежей базы, раз за разом, — ни одной ошибки.
+func TestConcurrentOpenStress(t *testing.T) {
+	for round := 0; round < 5; round++ {
+		path := filepath.Join(t.TempDir(), "filin.db")
+		var wg sync.WaitGroup
+		errs := make(chan error, 30)
+		for i := 0; i < 30; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				d, err := Open(path)
+				if err == nil {
+					err = d.Close()
+				}
+				if err != nil {
+					errs <- err
+				}
+			}()
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			t.Errorf("круг %d: %v", round, err)
+		}
+	}
+}
