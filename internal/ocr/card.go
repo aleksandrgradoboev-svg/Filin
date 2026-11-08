@@ -192,7 +192,10 @@ var (
 	// роли; предисловие, вступительная статья, комментарии — тоже слова-разделители, но без своей роли
 	roleWordRe = regexp.MustCompile(`(?i)(перевод\S*|пер\.|общая\s+редакция|общ\.\s*ред\.|под\s+(?:общей\s+)?ред\S*|отв\.\s*ред\.|редакция|редактор\S*|ред\.|составлени\S*|составител\S*|сост\.|художник\S*|худож\.|иллюстрации|рисунки|рис\.|предисл\S*|вступ\S*|коммент\S*|примеч\S*|послесл\S*)`)
 	nameRe     = regexp.MustCompile(`((?:[А-ЯЁ]\.\s?){1,2})\s?([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?)`)
-	langRe     = regexp.MustCompile(`(?i)(?:перевод|пер\.)\s*с\s*[а-яё]+\.?`)
+	// обратный порядок, как на титулах: «генерал-майора МИЛЬШТЕЙНА М. А.», «Петрова И. С.» —
+	// фамилия (бывает капсом) перед инициалами
+	surnameFirstRe = regexp.MustCompile(`([А-ЯЁ](?:[а-яё]+|[А-ЯЁ]+)(?:-[А-ЯЁ](?:[а-яё]+|[А-ЯЁ]+))?)\s+((?:[А-ЯЁ]\.\s?){1,2})`)
+	langRe         = regexp.MustCompile(`(?i)(?:перевод|пер\.)\s*с\s*[а-яё]+\.?`)
 )
 
 // roleNames разбирает текст об участниках на людей по ролям. Имена в начале, до первого
@@ -225,7 +228,7 @@ func roleNames(s string) (people []Person, authors []string) {
 			}
 			role, genitive = prev, prevGen
 		}
-		names := nameRe.FindAllStringSubmatch(seg, -1)
+		names := segmentNames(seg)
 		for _, m := range names {
 			people = append(people, Person{Name: person(m, genitive), Role: role})
 		}
@@ -256,6 +259,38 @@ func roleOf(w string) (role string, genitive bool) {
 	}
 }
 
+// segmentNames — имена в куске после слова-роли: сначала обычный порядок «И. О. Фамилия»;
+// нет ни одного — обратный «ФАМИЛИЯ И. О.». Оба порядка в одном куске не смешиваем: в «Е. М.
+// Федотова, И. С. Петрова» обратный порядок нашёл бы ложное «Федотова, И. С.».
+// Возвращает пары как у nameRe: [1] — инициалы, [2] — фамилия.
+func segmentNames(seg string) [][]string {
+	if names := nameRe.FindAllStringSubmatch(seg, -1); len(names) > 0 {
+		return names
+	}
+	var out [][]string
+	for _, m := range surnameFirstRe.FindAllStringSubmatch(seg, -1) {
+		out = append(out, []string{m[0], m[2], titleCase(m[1])})
+	}
+	return out
+}
+
+// titleCase — фамилия, набранная капсом: «МИЛЬШТЕЙНА» → «Мильштейна», «РИМСКИЙ-КОРСАКОВ» →
+// «Римский-Корсаков». Обычную («Петрова») не трогает.
+func titleCase(s string) string {
+	if s != strings.ToUpper(s) {
+		return s
+	}
+	parts := strings.Split(strings.ToLower(s), "-")
+	for i, p := range parts {
+		r := []rune(p)
+		if len(r) > 0 {
+			r[0] = []rune(strings.ToUpper(string(r[0])))[0]
+		}
+		parts[i] = string(r)
+	}
+	return strings.Join(parts, "-")
+}
+
 func person(m []string, genitive bool) string {
 	surname := m[2]
 	if genitive {
@@ -276,6 +311,12 @@ func nominative(s string) string {
 		if strings.HasSuffix(s, r.from) && len([]rune(s)) > len([]rune(r.from))+1 {
 			return strings.TrimSuffix(s, r.from) + r.to
 		}
+	}
+	// мужская фамилия на согласную: «Мильштейна» → «Мильштейн», «Шварца» → «Шварц». Женская в
+	// родительном кончается на «-ой», несклоняемая «а» после согласной — редкость у коротких
+	// («Дюма»): правило — только для фамилий от пяти букв
+	if r := []rune(s); len(r) >= 5 && r[len(r)-1] == 'а' && !strings.ContainsRune("аеёиоуыэюяйь", r[len(r)-2]) {
+		return string(r[:len(r)-1])
 	}
 	return s
 }
