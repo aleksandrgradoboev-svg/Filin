@@ -21,7 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aleksandrgradoboev-svg/filin/internal/bundled"
 	"github.com/aleksandrgradoboev-svg/filin/internal/catalog"
 	"github.com/aleksandrgradoboev-svg/filin/internal/cover"
 	"github.com/aleksandrgradoboev-svg/filin/internal/db"
@@ -189,9 +188,6 @@ func run(cmd, path, addr string, args []string) error {
 func serve(d *sql.DB, addr, covers string) error {
 	// поиск РГБ со списком — и здесь: по нажатию с этого же компьютера, как в программе
 	opts := append([]web.Option{web.OCR(startOCR(filepath.Dir(covers)))}, rslSearch()...)
-	if info, apk, ok := bundled.App(); ok {
-		opts = append(opts, web.BundledApp(info, apk))
-	}
 	h, err := web.New(catalog.New(d), covers, opts...)
 	if err != nil {
 		return err

@@ -47,8 +47,6 @@ type server struct {
 	probes ocr.Samples // пробы распознавания титулов: <данные>/ocr
 	phone  []string    // адреса для телефона в домашней сети: показываются на странице «Телефоны»
 
-	bundledInfo, bundledAPK []byte // приложение, вшитое в выпуск; пусто — только выложенное
-
 	rslSearcher RSLSearcher       // поиск РГБ со списком на компьютере; nil — только ссылка
 	rslMu       sync.Mutex        // охраняет rslJobs
 	rslJobs     map[int64]*rslJob // идущие поиски по книгам

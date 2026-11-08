@@ -68,7 +68,8 @@ func TestLatest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Release{Version: "v0.6.1", URL: "https://x/exe", SHA256: sum, Size: 1234, Page: "https://example/rel"}
+	want := Release{Version: "v0.6.1", URL: "https://x/exe", SHA256: sum, Size: 1234, Page: "https://example/rel",
+		APK: File{URL: "https://x/apk", SHA256: strings.Repeat("00", 32), Size: 10}} // app.json нет — сведений нет
 	if r != want {
 		t.Fatalf("got %+v, want %+v", r, want)
 	}

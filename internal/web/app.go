@@ -1,38 +1,32 @@
 package web
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
-	"time"
 )
 
-// Раздача приложения для телефона. Источников два:
-//   - выложенное: android/publish.ps1 кладёт в каталог приложения (<данные>/app) filin.apk
-//     и app.json с номером версии;
-//   - вшитое в filin.exe при сборке выпуска (пакет bundled) — чтобы человек, скачавший с
-//     выпуска один filin.exe, мог сразу поставить приложение по QR.
-// Отдаётся то, что новее. Приложение при запуске спрашивает /api/app и, если версия
-// новее установленной, скачивает /app.apk. Оба адреса открыты без привязки: приложение
-// ставят раньше, чем привязывают.
+// Раздача приложения для телефона — из каталога приложения (<данные>/app): filin.apk и
+// app.json с номером версии. Кладёт их туда сам Филин, скачивая из выпуска, когда там
+// приложение новее (update.SyncApp), — или android/publish.ps1 при разработке. В filin.exe
+// приложение не вшивается: оно меняется реже программы, а весило две трети каждого
+// обновления. Приложение при запуске спрашивает /api/app и, если версия новее
+// установленной, скачивает /app.apk. Оба адреса открыты без привязки: приложение ставят
+// раньше, чем привязывают.
 
 const (
 	apkFile     = "filin.apk"
 	appInfoFile = "app.json"
+	// после установки Филин сам скачивает приложение из выпуска — первые минуты его ещё нет
+	appMissing = "приложения для телефона на компьютере пока нет: Филин скачивает его сам после запуска — подождите несколько минут и попробуйте снова"
 )
 
 type appInfo struct {
 	VersionCode int    `json:"version_code"`
 	VersionName string `json:"version_name"`
 	APK         string `json:"apk"`
-}
-
-// BundledApp передаёт вшитое приложение: app.json и APK (из пакета bundled).
-func BundledApp(info, apk []byte) Option {
-	return func(s *server) { s.bundledInfo, s.bundledAPK = info, apk }
 }
 
 func parseAppInfo(b []byte) (appInfo, error) {
@@ -47,45 +41,39 @@ func parseAppInfo(b []byte) (appInfo, error) {
 	return a, nil
 }
 
-// readAppInfo — какое приложение раздаём и откуда; bundled=true — вшитое.
-func (s *server) readAppInfo() (a appInfo, bundled bool, err error) {
-	err = os.ErrNotExist
-	if s.appDir != "" {
-		if b, e := os.ReadFile(filepath.Join(s.appDir, appInfoFile)); e == nil {
-			if a, err = parseAppInfo(b); err == nil {
-				_, err = os.Stat(filepath.Join(s.appDir, apkFile))
-			}
-		}
+// readAppInfo — какое приложение раздаём: из каталога приложения; нет — ошибка.
+func (s *server) readAppInfo() (appInfo, error) {
+	if s.appDir == "" {
+		return appInfo{}, os.ErrNotExist
 	}
-	if len(s.bundledAPK) > 0 {
-		if in, e := parseAppInfo(s.bundledInfo); e == nil && (err != nil || in.VersionCode > a.VersionCode) {
-			return in, true, nil
-		}
+	b, err := os.ReadFile(filepath.Join(s.appDir, appInfoFile))
+	if err != nil {
+		return appInfo{}, err
 	}
-	return a, false, err
+	a, err := parseAppInfo(b)
+	if err != nil {
+		return a, err
+	}
+	_, err = os.Stat(filepath.Join(s.appDir, apkFile))
+	return a, err
 }
 
 func (s *server) apiApp(w http.ResponseWriter, r *http.Request) {
-	a, _, err := s.readAppInfo()
+	a, err := s.readAppInfo()
 	if err != nil {
-		apiError(w, http.StatusNotFound, "приложение на сервер не выложено")
+		apiError(w, http.StatusNotFound, appMissing)
 		return
 	}
 	writeJSON(w, http.StatusOK, a)
 }
 
 func (s *server) appAPK(w http.ResponseWriter, r *http.Request) {
-	_, bundled, err := s.readAppInfo()
-	if err != nil {
-		http.Error(w, "приложение на сервер не выложено", http.StatusNotFound)
+	if _, err := s.readAppInfo(); err != nil {
+		http.Error(w, appMissing, http.StatusNotFound)
 		return
 	}
 	w.Header().Set("Content-Type", "application/vnd.android.package-archive")
 	w.Header().Set("Content-Disposition", `attachment; filename="filin.apk"`)
 	w.Header().Set("Cache-Control", "no-cache") // новая версия — тот же адрес
-	if bundled {
-		http.ServeContent(w, r, apkFile, time.Time{}, bytes.NewReader(s.bundledAPK))
-		return
-	}
 	http.ServeFile(w, r, filepath.Join(s.appDir, apkFile))
 }
