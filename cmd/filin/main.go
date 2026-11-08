@@ -27,6 +27,7 @@ import (
 	"github.com/aleksandrgradoboev-svg/filin/internal/db"
 	"github.com/aleksandrgradoboev-svg/filin/internal/desktop"
 	"github.com/aleksandrgradoboev-svg/filin/internal/livelib"
+	"github.com/aleksandrgradoboev-svg/filin/internal/update"
 	"github.com/aleksandrgradoboev-svg/filin/internal/web"
 )
 
@@ -94,6 +95,7 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:8080", "адреса сервера для serve, через запятую")
 	port = flag.String("port", "8080", "порт программы (app)")
 	tesseract = flag.String("tesseract", "", "программа распознавания титулов; пусто — найти самому (PATH, Program Files)")
+	flag.StringVar(updatesURL, "updates", update.LatestURL, "где узнавать о новых выпусках (app); пусто — не проверять")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "использование: filin [-db путь] [-port 8080] [app | serve | stats | restore файл.zip | install | uninstall | import-livelib файл.mhtml… | import-livelib-genres жанры.mhtml | version]")
 		flag.PrintDefaults()
@@ -114,6 +116,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "filin:", err)
 		os.Exit(1)
 	}
+	restart() // обновление встало — база уже закрыта, порт свободен
 }
 
 func run(cmd, path, addr string, args []string) error {
