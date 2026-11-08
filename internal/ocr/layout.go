@@ -244,7 +244,7 @@ func parseImprint(lines []Line) (city, publisher string) {
 		}
 		var keep []string
 		for _, w := range strings.Fields(text) {
-			if c, ok := cities[fold(strings.Trim(w, ",;:·—–-"))]; ok && city == "" {
+			if c, ok := cityOf(strings.Trim(w, ",;:·—–-")); ok && city == "" {
 				city = c
 				continue
 			}
@@ -363,6 +363,40 @@ func shouting(s string) bool {
 		}
 	}
 	return up > 1 && up > 3*low
+}
+
+// cityOf — город по слову выходных данных; в названии от пяти букв прощается одна неверная
+// буква на своём месте: «МООКВА» (С прочиталась как О) — Москва. Короче — только точно:
+// у «Киев» и «Львов» соседей на одну букву слишком много.
+func cityOf(w string) (string, bool) {
+	f := fold(w)
+	if c, ok := cities[f]; ok {
+		return c, true
+	}
+	r := []rune(f)
+	if len(r) < 5 {
+		return "", false
+	}
+	found := ""
+	for k, c := range cities {
+		kr := []rune(k)
+		if len(kr) != len(r) {
+			continue
+		}
+		diff := 0
+		for i := range kr {
+			if kr[i] != r[i] {
+				diff++
+			}
+		}
+		if diff == 1 {
+			if found != "" && found != c {
+				return "", false // похоже на два города — не угадываем
+			}
+			found = c
+		}
+	}
+	return found, found != ""
 }
 
 func fold(s string) string {
