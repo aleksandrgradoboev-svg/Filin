@@ -3,6 +3,7 @@ package ocr
 import (
 	"bytes"
 	"context"
+	"image"
 	"image/jpeg"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/aleksandrgradoboev-svg/filin/internal/cover"
+	"github.com/aleksandrgradoboev-svg/filin/internal/ocrpack"
 )
 
 // Замер распознавания на настоящих снимках с телефона: титулы и каталожные карточки, как их
@@ -44,6 +46,13 @@ var corpus = map[string][]string{
 	// Е. В. Тарле, «Талейран. Из мемуаров Талейрана» (Республика, 1993): титул и карточка вверх ногами
 	"20261108-135607-53c6fc": {"Тарле", "Талейран", "мемуаров", "Москва", "Издательство", "Республика", "1993"},
 	"20261108-135652-6e24fe": {"Тарле", "Талейран", "мемуаров", "Республика", "1993", "317", "5250020089", "ББК", "академика"},
+	// Жаколио, Собр. соч. в 4 т., т. 1 (ТЕРРА, 1993) — оборот с карточкой, палец снизу
+	"20261108-173716-b10e93": {"Жаколио", "Собрание сочинений", "дебрях Индии", "Волошиновой", "ТЕРРА", "1993", "5852553107", "ББК"},
+	// Вальтер Скотт, Собр. соч., т. 20 и общий титул собрания (Худ. лит., 1965) — красный шрифт, разрядка
+	"20261108-173910-682811": {"Вальтер Скотт", "Собрание сочинений", "том двадцатый", "Граф Роберт Парижский", "Грибанова", "Надеждиной", "Статьи и дневники", "Художественная литература", "Москва", "1965"},
+	"20261108-174004-f28863": {"Вальтер Скотт", "Собрание сочинений", "двадцати томах", "Реизова", "Самарина", "Томашевского", "Художественная литература", "Москва", "1965"},
+	// Стивенсон, «Остров сокровищ. Черная стрела» (1957) — рисованный титул, пропись
+	"20261108-174300-23040d": {"Стивенсон", "Остров сокровищ", "Черная стрела", "Москва", "1957"},
 }
 
 var (
@@ -60,11 +69,34 @@ func rotatedJPEG(t *testing.T, photo []byte, q int) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var b bytes.Buffer
-	if err := jpeg.Encode(&b, rotate(gray(img), q), &jpeg.Options{Quality: 92}); err != nil {
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	var dst *image.RGBA
+	if q%2 == 1 {
+		dst = image.NewRGBA(image.Rect(0, 0, h, w))
+	} else {
+		dst = image.NewRGBA(image.Rect(0, 0, w, h))
+	}
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			c := img.At(b.Min.X+x, b.Min.Y+y)
+			switch q {
+			case 1:
+				dst.Set(h-1-y, x, c)
+			case 2:
+				dst.Set(w-1-x, h-1-y, c)
+			case 3:
+				dst.Set(y, w-1-x, c)
+			default:
+				dst.Set(x, y, c)
+			}
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 92}); err != nil {
 		t.Fatal(err)
 	}
-	return b.Bytes()
+	return buf.Bytes()
 }
 
 // found — нашлась ли ключевая строка: без регистра и «ё»; номер — по цифрам, пробелы и дефисы
@@ -79,13 +111,13 @@ func found(text, digits, want string) bool {
 func foldKey(s string) string { return strings.ReplaceAll(strings.ToLower(s), "ё", "е") }
 
 func TestCorpus(t *testing.T) {
-	dir := os.Getenv("FILIN_OCR_CORPUS")
-	if dir == "" {
-		t.Skip("замер на настоящих снимках — только по FILIN_OCR_CORPUS=<папка>")
+	dir, packDir := os.Getenv("FILIN_OCR_CORPUS"), os.Getenv("FILIN_OCR_PACK")
+	if dir == "" || packDir == "" {
+		t.Skip("замер на настоящих снимках — только по FILIN_OCR_CORPUS=<папка со снимками> и FILIN_OCR_PACK=<распакованный пакет>")
 	}
-	e := Engine{Bin: `C:\Program Files\Tesseract-OCR\tesseract.exe`}
-	if !e.Available() {
-		t.Skip("нет Tesseract")
+	e, err := ocrpack.OpenDir(packDir)
+	if err != nil {
+		t.Fatal(err)
 	}
 	names := make([]string, 0, len(corpus))
 	for n := range corpus {

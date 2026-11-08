@@ -35,9 +35,8 @@ import (
 var version = "dev"
 
 var (
-	tesseract *string
-	port      *string
-	explicit  = map[string]bool{} // флаги, заданные человеком, а не по умолчанию: их помнит ярлык
+	port     *string
+	explicit = map[string]bool{} // флаги, заданные человеком, а не по умолчанию: их помнит ярлык
 )
 
 // route — команда и её аргументы. Без команды — программа (app). Архив копии, перетащенный
@@ -94,7 +93,9 @@ func main() {
 	// 127.0.0.1: его не убирать. app сам находит адреса домашней сети, ему нужен только порт.
 	addr := flag.String("addr", "127.0.0.1:8080", "адреса сервера для serve, через запятую")
 	port = flag.String("port", "8080", "порт программы (app)")
-	tesseract = flag.String("tesseract", "", "программа распознавания титулов; пусто — найти самому (PATH, Program Files)")
+	// распознавание теперь своё (пакет моделей, internal/ocrpack); флаг принимается и
+	// ничего не делает — иначе не запустились бы ярлыки, сделанные с ним раньше
+	flag.String("tesseract", "", "не используется: распознавание встроено")
 	flag.StringVar(updatesURL, "updates", update.LatestURL, "где узнавать о новых выпусках (app); пусто — не проверять")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "использование: filin [-db путь] [-port 8080] [app | serve | stats | restore файл.zip | install | uninstall | import-livelib файл.mhtml… | import-livelib-genres жанры.mhtml | version]")
@@ -104,9 +105,6 @@ func main() {
 	flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
 	if *path == "" {
 		*path = defaultDB()
-	}
-	if *tesseract == "" {
-		*tesseract = desktop.FindTesseract()
 	}
 	cmd, args := route(flag.Args())
 	if err := run(cmd, *path, *addr, args); err != nil {
@@ -190,7 +188,7 @@ func run(cmd, path, addr string, args []string) error {
 
 func serve(d *sql.DB, addr, covers string) error {
 	// поиск РГБ со списком — и здесь: по нажатию с этого же компьютера, как в программе
-	opts := append([]web.Option{web.Tesseract(*tesseract)}, rslSearch()...)
+	opts := append([]web.Option{web.OCR(startOCR(filepath.Dir(covers)))}, rslSearch()...)
 	if info, apk, ok := bundled.App(); ok {
 		opts = append(opts, web.BundledApp(info, apk))
 	}

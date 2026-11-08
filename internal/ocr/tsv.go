@@ -117,12 +117,35 @@ func ParseTSV(data []byte) Page {
 func mergeRows(lines []Line) []Line {
 	var out []Line
 	used := make([]bool, len(lines))
-	for i := range lines {
+	for i := 0; i < len(lines); i++ {
 		if used[i] {
 			continue
 		}
-		used[i] = true // иначе строку, уже взятую началом, подхватит как продолжение другая
-		cur := lines[i]
+		// строка начинается с самого левого своего куска: авторский знак «Х 24» распознавание
+		// (PaddleOCR) выделяет отдельной рамкой левее описания и чуть ниже его верха — по
+		// порядку сверху вниз он идёт после описания, и справа его не подхватить
+		start := i
+		for {
+			left := -1
+			for j := range lines {
+				if used[j] || j == start || !sameRow(lines[j], lines[start]) ||
+					lines[j].Left+lines[j].Width > lines[start].Left+lines[start].Height/2 {
+					continue
+				}
+				if left < 0 || lines[j].Left > lines[left].Left {
+					left = j
+				}
+			}
+			if left < 0 {
+				break
+			}
+			start = left
+		}
+		if start != i {
+			i-- // этот кусок подхватит цепочка от start; если нет — разберётся на следующем шаге
+		}
+		used[start] = true // иначе строку, уже взятую началом, подхватит как продолжение другая
+		cur := lines[start]
 		for {
 			best := -1
 			for j := range lines {

@@ -9,9 +9,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -39,26 +36,6 @@ func HomeIP() net.IP {
 		return ip
 	}
 	return nil // публичный адрес или VPN на весь трафик — в такую сеть Филина не выставляем
-}
-
-// FindTesseract — где программа распознавания титулов, если её не указали: пусто — есть в
-// PATH (её найдут по имени) или нет вовсе. Установщик Tesseract для Windows в PATH её не
-// добавляет, поэтому смотрим и в его обычные папки.
-func FindTesseract() string {
-	if _, err := exec.LookPath("tesseract"); err == nil {
-		return ""
-	}
-	for _, base := range []string{os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)"),
-		filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs")} {
-		if base == "" || base == "Programs" {
-			continue
-		}
-		p := filepath.Join(base, "Tesseract-OCR", "tesseract.exe")
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-	}
-	return ""
 }
 
 // Running — отвечает ли на этом порту компьютера уже запущенный Филин: /api/ping
