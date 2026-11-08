@@ -1,96 +1,148 @@
 package desktop
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"sync/atomic"
+	"syscall"
+	"time"
 
 	webview2 "github.com/jchv/go-webview2"
 )
 
-// Поиск в РГБ на компьютере — так же, как на телефоне: сайт РГБ открывается во встроенном
-// браузере (WebView2 есть в каждой Windows 10/11), ищет и выбирает человек, Филин только
-// узнаёт, на какую запись он нажал. Программам поиск РГБ закрыт (robots.txt и проверка
-// браузерной сессии), а встроенный браузер, которым пользуется человек, — не программа.
+// Поиск в РГБ на компьютере — так же, как на телефоне (RslActivity): сайт РГБ открывается
+// во встроенном браузере Windows (WebView2), только невидимо; выдача читается со страницы
+// тем же скриптом и показывается человеку списком на странице Филина — выбирает он.
+// Программам поиск РГБ закрыт (robots.txt и проверка браузерной сессии), а браузер,
+// запущенный по нажатию человека, — не программа.
 
-// ErrRSLBusy — окно поиска уже открыто: второе не открываем, чтобы выбор не перепутался.
-var ErrRSLBusy = errors.New("окно поиска в РГБ уже открыто")
+// ErrRSLBusy — поиск уже идёт: второй не запускаем, чтобы выдачи не перепутались.
+var ErrRSLBusy = errors.New("поиск в РГБ уже идёт — дождитесь его")
 
-var rslOpen atomic.Bool
+var rslBusy atomic.Bool
 
-var reRecordHref = regexp.MustCompile(`record/(\d{8,14})`)
+// RSLFound — запись из выдачи РГБ: номер, автор, описание издания, как на странице поиска.
+type RSLFound struct {
+	ID     string `json:"id"`
+	Author string `json:"author"`
+	Info   string `json:"info"`
+}
 
-// rslHook — скрипт в каждой странице окна: нажатие на запись (в выдаче, в списке «похожих»)
-// не уходит на страницу записи, а отдаёт её номер Филину; если человек всё же открыл запись
-// другим путём — номер берётся из адреса.
-const rslHook = `(function(){
-  function pick(href){ var m = String(href).match(/record\/(\d{8,14})/); if (m) { window.filinPick(m[1]); return true; } return false; }
-  document.addEventListener('click', function(e){
-    var a = e.target.closest && e.target.closest('a[href*="/record/"]');
-    if (a && pick(a.getAttribute('href'))) { e.preventDefault(); e.stopPropagation(); }
-  }, true);
-  if (/\/record\/\d{8,14}/.test(location.pathname)) pick(location.pathname);
+// RSLResults — итог поиска: по какому запросу нашлось (основному или запасному «все книги
+// автора»), строка РГБ «Результатов: …» и сами записи.
+type RSLResults struct {
+	Query string     `json:"query"`
+	Info  string     `json:"info"`
+	Items []RSLFound `json:"items"`
+}
+
+// rslReader — тот же разбор выдачи, что у телефона (RslActivity.READ_RESULTS) и тот же порядок:
+// каждые полсекунды до 20 секунд; пусто по основному запросу — запасной (только автор), при этом
+// прежняя строка «Результатов: …» ещё висит и не считается.
+const rslReader = `(function(){
+  var fallback = %s, stale = null, polls = 0, current = decodeURIComponent(location.hash.replace(/^#q=/, ''));
+  function read(){ var info=document.querySelector('.rsl-search-info');
+    var items=[].slice.call(document.querySelectorAll('.search-item')).map(function(e){
+      var m=e.querySelector('.js-item-maininfo'), a=e.querySelector('.js-item-authorinfo');
+      return {id:m?m.getAttribute('data-id'):'', author:a?a.innerText.trim():'', info:m?m.innerText.trim():''};
+    }).filter(function(x){return x.id});
+    return {done:!!info, info:info?info.innerText.trim():'', items:items}; }
+  function tick(){ var r=read();
+    if (r.done && r.info !== stale) {
+      if (r.items.length===0 && fallback && current!==fallback) { stale=r.info; current=fallback; polls=0;
+        location.hash='#q='+encodeURIComponent(fallback); setTimeout(tick,500); return; }
+      r.query=current; window.filinResults(JSON.stringify(r)); return; }
+    if (++polls < 40) setTimeout(tick, 500); else window.filinResults('{"timeout":true}');
+  }
+  if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(tick,500); });
+  else setTimeout(tick,500);
 })();`
 
-// PickRSL открывает окно со страницей поиска РГБ pageURL и ждёт, пока человек нажмёт на
-// запись или закроет окно. ok=false — закрыл, ничего не выбрав. Блокирует до закрытия окна.
+var showWindow = syscall.NewLazyDLL("user32.dll").NewProc("ShowWindow")
+
+// SearchRSL ищет в РГБ невидимым браузером: pageURL — страница поиска с запросом, fallback —
+// запасной запрос, если по основному пусто. Возвращает выдачу для списка «Это она».
 //
 // Известный риск: при сбое настроек WebView2 библиотека go-webview2 зовёт log.Fatal и
 // завершает весь процесс. Снаружи это не перехватить; на исправной Windows 10/11 не случается.
-func PickRSL(pageURL string) (record string, ok bool, err error) {
+func SearchRSL(pageURL, fallback string) (RSLResults, error) {
 	if !strings.HasPrefix(pageURL, "https://search.rsl.ru/") {
-		return "", false, errors.New("окно поиска открывает только сайт РГБ")
+		return RSLResults{}, errors.New("поиск открывает только сайт РГБ")
 	}
-	if !rslOpen.CompareAndSwap(false, true) {
-		return "", false, ErrRSLBusy
+	if !rslBusy.CompareAndSwap(false, true) {
+		return RSLResults{}, ErrRSLBusy
 	}
-	defer rslOpen.Store(false)
+	defer rslBusy.Store(false)
 
 	type result struct {
-		id  string
+		raw string
 		err error
 	}
 	done := make(chan result, 1)
 	go func() {
-		// у окна свой поток и свой цикл сообщений: основной поток занят значком в трее,
+		// у браузера свой поток и свой цикл сообщений: основной поток занят значком в трее,
 		// а Terminate гасит цикл того потока, из которого вызван
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
-		var picked string
 		cache, err := os.UserCacheDir()
 		if err != nil {
 			cache = os.TempDir() // иначе путь стал бы относительным — кэш браузера в папке библиотеки
 		}
 		w := webview2.NewWithOptions(webview2.WebViewOptions{
-			DataPath: filepath.Join(cache, "Filin", "webview2"), // куки и кэш РГБ — не в папке библиотеки
-			WindowOptions: webview2.WindowOptions{
-				Title: "Филин — найдите своё издание в РГБ и нажмите на него",
-				Width: 1100, Height: 800, Center: true,
-			},
+			DataPath:      filepath.Join(cache, "Filin", "webview2"), // куки и кэш РГБ — не в папке библиотеки
+			WindowOptions: webview2.WindowOptions{Title: "Филин — поиск в РГБ", Width: 1100, Height: 800},
 		})
 		if w == nil {
-			done <- result{err: errors.New("встроенный браузер Windows (WebView2) не открылся — найдите запись в своём браузере и вставьте ссылку")}
+			done <- result{err: errors.New("встроенный браузер Windows (WebView2) не запустился")}
 			return
 		}
 		defer w.Destroy()
-		if err := w.Bind("filinPick", func(id string) {
-			if reRecordHref.MatchString("record/"+id) && picked == "" {
-				picked = id
-				w.Terminate() // вызывается в потоке окна
+		showWindow.Call(uintptr(w.Window()), 0) // SW_HIDE: человек видит список на странице Филина, а не сайт
+		var got string
+		if err := w.Bind("filinResults", func(js string) {
+			if got == "" {
+				got = js
+				w.Terminate() // вызывается в потоке браузера
 			}
 		}); err != nil {
 			done <- result{err: err}
 			return
 		}
-		w.Init(rslHook)
+		fb, _ := json.Marshal(fallback)
+		w.Init(fmt.Sprintf(rslReader, fb))
 		w.Navigate(pageURL)
+		// страховка: страница не загрузилась и скрипт так и не ответил — не висеть вечно
+		stop := time.AfterFunc(40*time.Second, func() { w.Dispatch(func() { w.Terminate() }) })
 		w.Run()
-		done <- result{id: picked}
+		stop.Stop()
+		done <- result{raw: got}
 	}()
 	r := <-done
-	return r.id, r.id != "", r.err
+	if r.err != nil {
+		return RSLResults{}, r.err
+	}
+	return parseRSLResults(r.raw)
+}
+
+// parseRSLResults разбирает ответ скрипта чтения выдачи.
+func parseRSLResults(raw string) (RSLResults, error) {
+	if raw == "" {
+		return RSLResults{}, errors.New("РГБ не открылась — проверьте связь с интернетом")
+	}
+	var r struct {
+		RSLResults
+		Timeout bool `json:"timeout"`
+	}
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		return RSLResults{}, fmt.Errorf("выдача РГБ не разобрана: %w", err)
+	}
+	if r.Timeout {
+		return RSLResults{}, errors.New("РГБ не ответила за 20 секунд")
+	}
+	return r.RSLResults, nil
 }

@@ -89,32 +89,47 @@ func rslSearchURL(e catalog.Edition) string {
 	return fmt.Sprintf("/book/%d/rsl?%s", e.ID, v.Encode())
 }
 
-// RSLPicker — окно поиска РГБ на компьютере (desktop.PickRSL): открывает страницу поиска
-// pageURL и ждёт, на какую запись нажмёт человек; ok=false — закрыл окно, ничего не выбрав.
-type RSLPicker func(pageURL string) (record string, ok bool, err error)
+// RSLFound — запись из выдачи РГБ для списка «Это она»: номер, автор, описание издания.
+type RSLFound struct {
+	ID     string `json:"id"`
+	Author string `json:"author"`
+	Info   string `json:"info"`
+}
 
-// WithRSLPicker включает поиск РГБ в окне на компьютере. Без него (filin serve, не Windows)
-// «Дополнить из РГБ» ведёт на форму со ссылкой на поиск в браузере.
-func WithRSLPicker(p RSLPicker) Option { return func(s *server) { s.rslPicker = p } }
+// RSLResults — выдача: по какому запросу (основному или запасному «все книги автора»),
+// строка РГБ «Результатов: …» и записи.
+type RSLResults struct {
+	Query string     `json:"query"`
+	Info  string     `json:"info"`
+	Items []RSLFound `json:"items"`
+}
 
-// rslJob — открытое окно поиска для книги: страница в браузере опрашивает, чем кончилось.
+// RSLSearcher — поиск РГБ на компьютере (desktop.SearchRSL): невидимый браузер открывает
+// страницу поиска pageURL и читает выдачу, как телефон; fallback — запасной запрос.
+type RSLSearcher func(pageURL, fallback string) (RSLResults, error)
+
+// WithRSLSearcher включает поиск РГБ со списком на компьютере. Без него (filin serve, не
+// Windows) «Дополнить из РГБ» ведёт на форму со ссылкой на поиск в браузере.
+func WithRSLSearcher(f RSLSearcher) Option { return func(s *server) { s.rslSearcher = f } }
+
+// rslJob — идущий поиск для книги: страница в браузере опрашивает, чем кончилось.
 type rslJob struct {
-	done   bool
-	record string
-	err    string
+	done bool
+	res  RSLResults
+	err  string
 }
 
 // rslSearch — «Дополнить из РГБ» не из приложения (приложение перехватывает ссылку само):
-// на этом компьютере — окно поиска РГБ и страница ожидания; иначе — форма со ссылкой.
-// Окно открывается только по запросу с самого компьютера: нажатие с телефона (старое
-// приложение без перехвата) не должно выбрасывать окно на чужой экран.
+// на этом компьютере — поиск и список «Это она» на странице Филина; иначе — форма со ссылкой.
+// Поиск запускается только по запросу с самого компьютера: невидимый браузер работает
+// здесь, и телефон со старым приложением его не запускает.
 func (s *server) rslSearch(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	if s.rslPicker == nil || !fromThisComputer(r) {
+	if s.rslSearcher == nil || !fromThisComputer(r) {
 		http.Redirect(w, r, fmt.Sprintf("/book/%d/edit#rsl", id), http.StatusSeeOther)
 		return
 	}
@@ -123,22 +138,22 @@ func (s *server) rslSearch(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	q, _ := rslQuery(e) // запрос — из карточки, а не из адреса: окно ищет только по своей книге
+	q, fb := rslQuery(e) // запрос — из карточки, а не из адреса: ищем только по своей книге
 	page := rslPageURL(e, "")
 	s.rslMu.Lock()
 	if s.rslJobs == nil {
 		s.rslJobs = map[int64]*rslJob{}
 	}
-	// окно уже открыто — второе не открываем; закончилось, а итог никто не забрал (вкладку
-	// ожидания закрыли) — старый итог не в счёт, открываем заново
+	// поиск уже идёт — второй не запускаем; закончился, а итог никто не забрал (вкладку
+	// закрыли) — старый итог не в счёт, ищем заново
 	if job, ok := s.rslJobs[id]; !ok || job.done {
 		job := &rslJob{}
 		s.rslJobs[id] = job
 		go func() {
-			rec, _, err := s.rslPicker(page)
+			res, err := s.rslSearcher(page, fb)
 			s.rslMu.Lock()
 			defer s.rslMu.Unlock()
-			job.done, job.record = true, rec
+			job.done, job.res = true, res
 			if err != nil {
 				job.err = err.Error()
 			}
@@ -154,8 +169,14 @@ type rslWaitPage struct {
 	Query string
 }
 
-// rslStatus — чем кончилось окно поиска: ждём / выбрана запись (куда идти) / закрыто / ошибка.
-// Итог отдаётся один раз: следующее «Дополнить» откроет окно заново.
+// rslFoundItem — запись в ответе страницы: «Это она» ведёт сразу в форму дополнения.
+type rslFoundItem struct {
+	RSLFound
+	URL string `json:"url"`
+}
+
+// rslStatus — чем кончился поиск: ждём / найдено (список «Это она») / ошибка.
+// Итог отдаётся один раз: следующее «Дополнить» ищет заново.
 func (s *server) rslStatus(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -164,23 +185,26 @@ func (s *server) rslStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	s.rslMu.Lock()
 	job, ok := s.rslJobs[id]
-	var out map[string]string
+	var out map[string]any
 	switch {
 	case !ok:
-		out = map[string]string{"state": "none"}
+		out = map[string]any{"state": "none"}
 	case !job.done:
-		out = map[string]string{"state": "waiting"}
+		out = map[string]any{"state": "waiting"}
 	default:
 		delete(s.rslJobs, id)
-		switch {
-		case job.err != "":
-			out = map[string]string{"state": "error", "error": job.err}
-		case job.record != "":
-			out = map[string]string{"state": "picked",
-				"url": fmt.Sprintf("/book/%d/edit?rsl=%s#rsl", id, url.QueryEscape(job.record))}
-		default:
-			out = map[string]string{"state": "closed"}
+		if job.err != "" {
+			out = map[string]any{"state": "error", "error": job.err}
+			break
 		}
+		items := []rslFoundItem{}
+		for _, f := range job.res.Items {
+			if _, err := rsl.RecordID(f.ID); err != nil {
+				continue // номер не похож на запись РГБ — в форму такой не отдаём
+			}
+			items = append(items, rslFoundItem{f, fmt.Sprintf("/book/%d/edit?rsl=%s#rsl", id, url.QueryEscape(f.ID))})
+		}
+		out = map[string]any{"state": "found", "query": job.res.Query, "info": job.res.Info, "items": items}
 	}
 	s.rslMu.Unlock()
 	writeJSON(w, http.StatusOK, out)
@@ -389,7 +413,9 @@ func addISBNs(dst *[]isbn.ISBN, more []isbn.ISBN) bool {
 // подзаголовком и выходными данными («Первая оборона Севастополя, 1854-1855 гг. …»).
 func sameTitle(card, record string) bool {
 	c, r := strings.Join(words(card), " "), strings.Join(words(record), " ")
-	return c != "" && (c == r || strings.HasPrefix(r, c+" "))
+	// подзаголовок бывает и в записи, и в карточке: «Водители фрегатов» против
+	// «Водители фрегатов: Книга о великих мореплавателях» — одна книга в обе стороны
+	return c != "" && r != "" && (c == r || strings.HasPrefix(r, c+" ") || strings.HasPrefix(c, r+" "))
 }
 
 // mergeForm кладёт поверх записи РГБ то, что человек оставил в форме: его правка главнее.
