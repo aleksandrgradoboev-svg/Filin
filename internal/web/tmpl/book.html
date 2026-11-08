@@ -27,7 +27,7 @@
   {{with .E.Annotation}}<p class="annotation pre">{{.}}</p>{{end}}
   {{with .E.Contents}}<details class="past"><summary>Содержание</summary><div class="pre">{{.}}</div></details>{{end}}
   <p><a class="btn ghost" href="/book/{{.E.ID}}/edit">✏️ Править издание</a>
-    <a class="btn ghost" href="/book/{{.E.ID}}/alib">📚 {{if .E.Annotation}}Аннотация с alib{{else}}Найти аннотацию на alib{{end}}</a></p>
+    <a class="btn ghost" href="/book/{{.E.ID}}/alib">📚 alib: аннотация и цены</a></p>
   </div>
 </article>
 
@@ -42,22 +42,24 @@
       {{if .NoLend}}<span class="tag warn">не давать</span>{{end}}</div>
     {{if or .Grade .Condition}}<div class="muted">состояние: {{with grade .Grade}}<b>{{.}}</b>{{end}}{{if and .Grade .Condition}}; {{end}}{{.Condition}}</div>{{end}}
 
-    {{with .Value}}<div class="value">💰 <b>{{rub .Amount}}</b> <span class="muted">на {{date .ValuedOn}}{{if .Basis}} · {{.Basis}}{{end}}{{if .SourceURL}} · <a href="{{.SourceURL}}" rel="noreferrer" target="_blank">источник</a>{{end}}</span></div>{{end}}
+    {{with .Value}}<div class="value">💰 <b>{{price .Amount .AmountTo}}</b> <span class="muted">на {{date .ValuedOn}}{{if .Basis}} · {{.Basis}}{{end}}{{if .SourceURL}} · <a href="{{.SourceURL}}" rel="noreferrer" target="_blank">источник</a>{{end}}</span></div>{{end}}
     <details class="lend" {{if eq $.ValueCopy .ID}}open{{end}}>
       <summary>{{if .Value}}Переоценить{{else}}Оценить{{end}}</summary>
       {{if eq $.ValueCopy .ID}}<div class="note err">{{$.ValueErr}}</div>{{end}}
       <form method="post" action="/copy/{{.ID}}/value" class="form">
         <div class="row3">
-          <label>Сумма, ₽<input name="amount" inputmode="numeric" required placeholder="1500"></label>
+          <label>Сумма, ₽ <span class="hint">или «от»</span><input name="amount" inputmode="numeric" required placeholder="1200"></label>
+          <label>До, ₽ <span class="hint">если диапазон</span><input name="amount_to" inputmode="numeric" placeholder="1800"></label>
           <label>На дату<input type="date" name="valued_on" value="{{$.Today}}"></label>
-          <label>Ссылка <span class="hint">необязательно</span><input name="source_url" type="url" placeholder="https://www.alib.ru/…"></label>
         </div>
-        <label>Основание<input name="basis" placeholder="например: три предложения на alib.ru, от 1200 до 1800"></label>
+        <label>Ссылка <span class="hint">необязательно</span><input name="source_url" type="url" placeholder="https://www.alib.ru/…"></label>
+        <label>Основание<input name="basis" placeholder="например: три предложения на alib.ru"></label>
+        <p class="hint">Подобрать по предложениям букинистов — кнопка «📚 alib» выше: там отмечаете похожие, и оценка заполнится сама.</p>
         <p><button class="btn">Записать оценку</button></p>
       </form>
       {{with .Valuations}}
       <ul class="vals">{{range .}}
-        <li>{{rub .Amount}} — {{date .ValuedOn}}{{if .Basis}} · {{.Basis}}{{end}}
+        <li>{{price .Amount .AmountTo}} — {{date .ValuedOn}}{{if .Basis}} · {{.Basis}}{{end}}
           <form method="post" action="/valuation/{{.ID}}/delete" class="inline-del" onsubmit="return confirm('Убрать эту оценку?')"><button class="linklike" title="Убрать ошибочную оценку">✕</button></form></li>
       {{end}}</ul>
       {{end}}

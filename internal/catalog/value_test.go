@@ -41,7 +41,7 @@ func TestValuationsAndSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sum != (ValueSummary{Total: 1600, Valued: 2, Copies: 3, Cherished: 1}) {
+	if sum != (ValueSummary{Total: 1600, TotalTo: 1600, Valued: 2, Copies: 3, Cherished: 1}) {
 		t.Errorf("итог: %+v", sum)
 	}
 	top, err := s.MostValuable(10, false)
@@ -76,5 +76,55 @@ func TestValuationsAndSummary(t *testing.T) {
 	}
 	if GradeName(5) != "отличное" || GradeName(0) != "" || GradeName(9) != "" {
 		t.Error("шкала состояния")
+	}
+}
+
+// Оценка диапазоном «от – до»: сумма по библиотеке считается по обеим границам,
+// «от 500 до 500» хранится точной суммой, перевёрнутый диапазон не принимается.
+func TestValuationRange(t *testing.T) {
+	s := newStore(t)
+	eid, a := lentCopy(t, s, "Оверлорд")
+	_, b := lentCopy(t, s, "Точная сумма")
+	_, c := lentCopy(t, s, "Ровный диапазон")
+	for _, v := range []Valuation{
+		{CopyID: a, Amount: 170, AmountTo: 450, Basis: "по трём предложениям alib.ru"},
+		{CopyID: b, Amount: 1000},
+		{CopyID: c, Amount: 500, AmountTo: 500},
+	} {
+		if _, err := s.AddValuation(&v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cs, err := s.Copies(eid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := cs[0].Value; v == nil || v.Amount != 170 || v.AmountTo != 450 {
+		t.Fatalf("диапазон в карточке: %+v", v)
+	}
+	if hist, _ := s.CopyValuations(c); len(hist) != 1 || hist[0].AmountTo != 0 {
+		t.Errorf("«от 500 до 500» должно стать точной суммой: %+v", hist)
+	}
+	sum, err := s.ValueSummary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Total != 170+1000+500 || sum.TotalTo != 450+1000+500 {
+		t.Errorf("итог: от %d до %d", sum.Total, sum.TotalTo)
+	}
+	top, err := s.MostValuable(10, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// по середине: 1000 > 500 > (170+450)/2 = 310
+	if len(top) != 3 || top[0].Amount != 1000 || top[1].Amount != 500 || top[2].AmountTo != 450 {
+		t.Errorf("порядок ценного: %+v", top)
+	}
+	if _, err := s.AddValuation(&Valuation{CopyID: a, Amount: 450, AmountTo: 170}); !IsInput(err) {
+		t.Errorf("перевёрнутый диапазон принят: %v", err)
+	}
+	// база держит то же правило сама: в обход проверки Go не записать
+	if _, err := s.db.Exec(`INSERT INTO valuation (copy_id, amount, amount_to, valued_on) VALUES (?, 450, 170, '2026-11-08')`, a); err == nil {
+		t.Error("база приняла перевёрнутый диапазон")
 	}
 }

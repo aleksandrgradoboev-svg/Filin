@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -76,7 +77,49 @@ type Offer struct {
 	Desc      string // «Москва. Прогресс. 1989г. 470 с. Твердый переплет…»
 	Condition string // «хорошее, штамп»
 	Price     string // «170 руб.»
+	Rub       int    // цена числом: 170; 0 — не разобрана
+	Year      int    // год издания из описания: «1989г.» → 1989; 0 — не нашёлся
 	URL       string
+}
+
+var (
+	rePrice = regexp.MustCompile(`^(\d[\d\s\x{00A0}]*)\s*руб`)
+	// год — четыре цифры перед «г»: «Прогресс. 1989г.», «1947 г.». Первый такой: дальше
+	// в описании бывают годы перепечатки и даты из истории книги
+	reYear = regexp.MustCompile(`(?:^|\D)(1[5-9]\d\d|20\d\d)\s?г`)
+)
+
+// rubles — цена предложения числом: «170 руб.», «1 200 руб.».
+func rubles(price string) int {
+	m := rePrice.FindStringSubmatch(price)
+	if m == nil {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, m[1]))
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// reWeight — перед числом стоит вес: «Вес 1600 г.» — это граммы, а не год.
+var reWeight = regexp.MustCompile(`(?i)(вес|масса)\W{0,3}$`)
+
+// year — год издания из описания продавца: первый «NNNNг.», который не вес.
+func year(desc string) int {
+	for _, m := range reYear.FindAllStringSubmatchIndex(desc, -1) {
+		if reWeight.MatchString(desc[:m[2]]) {
+			continue
+		}
+		y, _ := strconv.Atoi(desc[m[2]:m[3]])
+		return y
+	}
+	return 0
 }
 
 // Page — что на странице книги.
@@ -129,7 +172,9 @@ func Parse(page, url string) Page {
 		}
 		if b := reBuy.FindStringSubmatch(m[2]); b != nil {
 			o.URL, o.Price = b[1], clean(b[2])
+			o.Rub = rubles(o.Price)
 		}
+		o.Year = year(o.Desc)
 		p.Offers = append(p.Offers, o)
 	}
 	return p

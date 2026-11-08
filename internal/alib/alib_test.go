@@ -88,7 +88,8 @@ func TestParse(t *testing.T) {
 	}
 	o := p.Offers[0]
 	if o.Seller != "BS-продавец1 Кунгур." || !strings.Contains(o.Desc, "Прогресс. 1989г.") || o.Condition != "хорошее, штамп" ||
-		o.Price != "170 руб." || !strings.HasPrefix(o.URL, "https://www.alib.ru/5_hastings") {
+		o.Price != "170 руб." || !strings.HasPrefix(o.URL, "https://www.alib.ru/5_hastings") ||
+		o.Rub != 170 || o.Year != 1989 {
 		t.Errorf("первое предложение: %+v", o)
 	}
 
@@ -98,7 +99,7 @@ func TestParse(t *testing.T) {
 		t.Errorf("Куликовский: %d предложений, %q", len(k.Offers), k.Annotation[:40])
 	}
 	for _, o := range k.Offers {
-		if strings.Contains(o.Desc, "фото") || o.Desc == "" || o.Price == "" {
+		if strings.Contains(o.Desc, "фото") || o.Desc == "" || o.Price == "" || o.Rub <= 0 {
 			t.Errorf("предложение разобрано криво: %+v", o)
 		}
 	}
@@ -153,5 +154,55 @@ func TestClient(t *testing.T) {
 	}
 	if _, err := c.Fetch(context.Background(), "Хастингс", "«»"); err == nil {
 		t.Error("пустое название ушло в alib")
+	}
+}
+
+func TestRublesAndYear(t *testing.T) {
+	for in, want := range map[string]int{
+		"170 руб.":                   170,
+		"1 200 руб.":                 1200,
+		"1 200 руб.":                 1200,
+		"договорная":                 0,
+		"":                           0,
+		"руб.":                       0,
+		"999999999999999999999 руб.": 0, // не влезает в число — не цена
+	} {
+		if got := rubles(in); got != want {
+			t.Errorf("rubles(%q) = %d, want %d", in, got, want)
+		}
+	}
+	for in, want := range map[string]int{
+		"Москва. Прогресс. 1989г. 470 с.":     1989,
+		"М. Детская литература 1947 г. 96 с.": 1947,
+		"Л. 1986г. Переиздание 2001г.":        1986, // первый — год издания
+		"М. Наука. 470 с. Тираж 50000 экз.":   0,
+		"Твердый переплет, 1200 г вес":        0, // граммы, а не год
+		"Вес 1600 г. М. Наука 1971г.":         1971,
+		"Масса: 2000 г. Спб. 2012г.":          2012,
+		"Спб. 2012г.":                         2012,
+	} {
+		if got := year(in); got != want {
+			t.Errorf("year(%q) = %d, want %d", in, got, want)
+		}
+	}
+}
+
+// На настоящих страницах: у каждого предложения с ценой цена разобрана, а год есть у
+// большинства — продавцы почти всегда пишут его в описании.
+func TestOffersHavePriceAndYear(t *testing.T) {
+	for _, name := range []string{"hastings.html", "kulikovskij.html", "chukovskij.html"} {
+		p := Parse(load(t, name), "u")
+		withYear := 0
+		for _, o := range p.Offers {
+			if o.Price != "" && o.Rub == 0 {
+				t.Errorf("%s: цена %q не разобрана", name, o.Price)
+			}
+			if o.Year != 0 {
+				withYear++
+			}
+		}
+		if withYear*10 < len(p.Offers)*8 {
+			t.Errorf("%s: год найден у %d из %d предложений", name, withYear, len(p.Offers))
+		}
 	}
 }

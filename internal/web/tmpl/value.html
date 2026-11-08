@@ -1,7 +1,7 @@
 {{define "content"}}
 <h1>Ценность</h1>
 <div class="stats">
-  <div><b>{{rub .Sum.Total}}</b><span>оценка библиотеки</span></div>
+  <div><b>{{price .Sum.Total .Sum.TotalTo}}</b><span>оценка библиотеки</span></div>
   <div><b>{{.Sum.Valued}} из {{.Sum.Copies}}</b><span>экземпляров оценено</span></div>
   <div><b>{{.Sum.Cherished}}</b><span>❤️ дорожу</span></div>
 </div>
@@ -28,7 +28,7 @@
       {{if .Authors}}<div class="muted">{{.Authors}}</div>{{end}}
       <div class="muted">{{with grade .Grade}}состояние: {{.}}{{end}}{{if .Cherished}} ❤️{{end}}</div>
     </div>
-    <div class="amount">{{if .ValuedOn}}<b>{{rub .Amount}}</b><div class="muted">{{date .ValuedOn}}</div>{{else}}<span class="muted">не оценено</span>{{end}}</div>
+    <div class="amount">{{if .ValuedOn}}<b>{{price .Amount .AmountTo}}</b><div class="muted">{{date .ValuedOn}}</div>{{else}}<span class="muted">не оценено</span>{{end}}</div>
   </li>
   {{end}}
 </ul>

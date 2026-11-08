@@ -9,7 +9,7 @@
   <p><button class="btn ghost">Искать на alib</button></p>
 </form>
 
-{{with .Err}}<div class="note err">{{.}}</div>{{end}}
+{{if not .Suggest}}{{with .Err}}<div class="note err">{{.}}</div>{{end}}{{end}}
 {{if .Page.URL}}
   {{if not .Page.Found}}
   <div class="note err">На alib такой страницы нет: <a href="{{.Page.URL}}" rel="noreferrer" target="_blank">{{.Page.URL}}</a>.
@@ -30,13 +30,49 @@
   {{else}}
   <div class="note">Аннотации у этой страницы на alib нет — только предложения продавцов.</div>
   {{end}}
-  {{with .Page.Offers}}
-  <h2>В продаже — {{len .}}</h2>
-  <ul class="vals">{{range .}}
-    <li>{{.Desc}}{{with .Condition}} <span class="muted">· {{.}}</span>{{end}}
-      {{if .Price}} — {{if .URL}}<a href="{{.URL}}" rel="noreferrer" target="_blank">{{.Price}}</a>{{else}}{{.Price}}{{end}}{{end}}
-      {{with .Seller}}<span class="muted">· {{.}}</span>{{end}}</li>
-  {{end}}</ul>
+  {{with .Offers}}
+  <h2 id="offers">В продаже — {{len .}}</h2>
+  <p class="muted">Цены продавцов — предложения, а не сделки. Отметьте похожие на ваш экземпляр (то же издание,
+    похожее состояние) — Филин подскажет оценку «от самой низкой до самой высокой», сумму поправите сами.
+    ⭐ — тот же год или то же издательство, что у этой книги.</p>
+  <form method="get" action="/book/{{$.E.ID}}/alib#suggest" class="form">
+    <input type="hidden" name="surname" value="{{$.Surname}}">
+    <input type="hidden" name="title" value="{{$.Name}}">
+    <ul class="offers">{{range .}}
+      <li{{if .Match}} class="match"{{end}}>
+        <label class="check">
+          {{if .Rub}}<input type="checkbox" name="pick" value="{{.Index}}"{{if .Picked}} checked{{end}}>{{else}}<input type="checkbox" disabled title="цена не указана">{{end}}
+          <span>{{if .Match}}<span class="tag same" title="совпадает с этой книгой">⭐ {{.Match}}</span> {{end}}{{.Desc}}{{with .Condition}} <span class="muted">· {{.}}</span>{{end}}
+            {{if .Price}} — {{if .URL}}<a href="{{.URL}}" rel="noreferrer" target="_blank"><b>{{.Price}}</b></a>{{else}}<b>{{.Price}}</b>{{end}}{{end}}
+            {{with .Seller}}<span class="muted">· {{.}}</span>{{end}}</span>
+        </label>
+      </li>
+    {{end}}</ul>
+    <p><button class="btn ghost">Подсказать оценку по отмеченным</button></p>
+  </form>
+  {{end}}
+
+  {{with .Suggest}}
+  <h2 id="suggest">Оценка по аналогам</h2>
+  {{with $.Err}}<div class="note err">{{.}}</div>{{end}}
+  {{if not $.Copies}}
+  <div class="note">Оценивается экземпляр, а у этой книги экземпляров нет. <a href="/book/{{$.E.ID}}">Заведите экземпляр в карточке</a> и вернитесь.</div>
+  {{else}}
+  <form method="post" action="/book/{{$.E.ID}}/alib/value" class="form">
+    {{if eq (len $.Copies) 1}}<input type="hidden" name="copy" value="{{(index $.Copies 0).ID}}">
+    {{else}}<label>Экземпляр<select name="copy" required>
+      {{range $i, $c := $.Copies}}<option value="{{$c.ID}}">№{{add $i 1}}{{with shelf $c.Room $c.Bookcase $c.Shelf}} · {{.}}{{end}}{{with grade $c.Grade}} · {{.}}{{end}}{{with $c.Value}} · сейчас {{price .Amount .AmountTo}}{{end}}</option>{{end}}
+    </select></label>{{end}}
+    <div class="row3">
+      <label>От, ₽<input name="amount" inputmode="numeric" required value="{{.From}}"></label>
+      <label>До, ₽ <span class="hint">пусто — точная сумма</span><input name="amount_to" inputmode="numeric" value="{{.To}}"></label>
+      <label>На дату<input type="date" name="valued_on" value="{{$.Today}}"></label>
+    </div>
+    <label>Основание<input name="basis" value="{{.Basis}}"></label>
+    <input type="hidden" name="source_url" value="{{$.Page.URL}}">
+    <p><button class="btn">Записать оценку</button> <span class="hint">прежние оценки экземпляра сохранятся</span></p>
+  </form>
+  {{end}}
   {{end}}
   {{end}}
 {{end}}

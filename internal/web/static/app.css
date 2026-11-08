@@ -190,6 +190,13 @@ select { width: 100%; font: inherit; color: var(--ink); background: rgba(255, 25
 .tag.read { background: var(--accent); color: var(--accent-ink); }
 .value { margin: 6px 0; }
 .vals { margin: 8px 0 0; padding-left: 20px; }
+/* предложения alib: галочка — аналог для оценки; похожие на это издание — с полосой слева */
+.offers { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; }
+.offers li { border: 1px solid var(--line); border-radius: 5px; padding: 6px 10px; }
+.offers li.match { border-left: 4px solid var(--accent); }
+.offers label.check { align-items: flex-start; }
+.offers label.check input { margin-top: 4px; flex: none; }
+.tag.same { background: var(--accent); color: var(--accent-ink); }
 .inline-del { display: inline; }
 .linklike { background: none; border: none; color: var(--muted); cursor: pointer; font: inherit; padding: 0 4px; }
 .linklike:hover { color: var(--warn); }
