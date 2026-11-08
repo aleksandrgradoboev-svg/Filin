@@ -18,15 +18,27 @@ import (
 // Карточка с фото титула — для книг без штрихкода: телефон присылает фото, сервер
 // распознаёт его и отдаёт черновик полей в форму. Сохраняет человек, после правки.
 
-// Tesseract — путь к программе распознавания; пусто — искать tesseract в PATH.
-func Tesseract(bin string) Option { return func(s *server) { s.ocr.Bin = bin } }
+// Recognizer — распознавание фото: таблица слов в формате tesseract tsv (её разбирает
+// ocr.ParseTSV). Status — готово ли; если нет — что сказать человеку (например, модели
+// ещё скачиваются).
+type Recognizer interface {
+	Status() (bool, string)
+	Recognize(ctx context.Context, photo []byte) ([]byte, error)
+}
 
-// recognizeTimeout — сколько ждать Tesseract: страница на домашней машине — секунды.
+// OCR — чем распознавать фото титулов и карточек (internal/ocrpack).
+func OCR(r Recognizer) Option { return func(s *server) { s.ocr = r } }
+
+// recognizeTimeout — сколько ждать распознавания: страница на домашней машине — секунды.
 const recognizeTimeout = 90 * time.Second
 
 func (s *server) apiTitle(w http.ResponseWriter, r *http.Request) {
-	if !s.ocr.Available() {
-		apiError(w, http.StatusServiceUnavailable, ocr.ErrNoEngine.Error())
+	if s.ocr == nil {
+		apiError(w, http.StatusServiceUnavailable, "распознавание фото на этом компьютере не подключено")
+		return
+	}
+	if ok, msg := s.ocr.Status(); !ok {
+		apiError(w, http.StatusServiceUnavailable, msg)
 		return
 	}
 	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxUpload))

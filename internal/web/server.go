@@ -43,7 +43,7 @@ type server struct {
 	appDir string  // выложенное приложение для телефона: рядом с обложками, <данные>/app
 	rsl    rsl.Client
 	alib   *alib.Client // один на сервер: пауза между запросами к alib общая
-	ocr    ocr.Engine
+	ocr    Recognizer
 	probes ocr.Samples // пробы распознавания титулов: <данные>/ocr
 	phone  []string    // адреса для телефона в домашней сети: показываются на странице «Телефоны»
 

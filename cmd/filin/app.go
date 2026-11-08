@@ -49,7 +49,7 @@ func app(d *sql.DB, path, covers string) error {
 		log.Print("домашняя сеть не найдена — Филин виден только на этом компьютере")
 	}
 
-	opts := []web.Option{web.Tesseract(*tesseract), web.PhoneURLs(phone)}
+	opts := []web.Option{web.OCR(startOCR(filepath.Dir(path))), web.PhoneURLs(phone)}
 	if info, apk, ok := bundled.App(); ok { // выпуск несёт приложение в себе — QR сразу ведёт к нему
 		opts = append(opts, web.BundledApp(info, apk))
 	}
@@ -190,14 +190,11 @@ func install(path string) error {
 	if err := os.WriteFile(icon, desktop.Icon, 0o644); err != nil {
 		return err
 	}
-	// ярлык помнит только то, что человек задал сам: база рядом с программой и найденный
-	// Tesseract находятся и так, а зашитый путь сломался бы при переносе папки
+	// ярлык помнит только то, что человек задал сам: база рядом с программой находится и так,
+	// а зашитый путь сломался бы при переносе папки
 	var args string
 	if explicit["db"] {
 		args += fmt.Sprintf(`-db "%s" `, dbAbs)
-	}
-	if explicit["tesseract"] {
-		args += fmt.Sprintf(`-tesseract "%s" `, *tesseract)
 	}
 	if *port != "8080" {
 		args += "-port " + *port + " "

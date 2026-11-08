@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -24,12 +25,51 @@ func TestPagesAreNotCached(t *testing.T) {
 	}
 }
 
-// Без Tesseract фото титула не принимается — с понятным текстом, а не падением.
+// fakeOCR — распознавание без моделей: готово ли и что «прочитано».
+type fakeOCR struct {
+	ready bool
+	msg   string
+	tsv   []byte
+}
+
+func (f fakeOCR) Status() (bool, string) { return f.ready, f.msg }
+func (f fakeOCR) Recognize(context.Context, []byte) ([]byte, error) {
+	return f.tsv, nil
+}
+
+// Без распознавания фото титула не принимается — с понятным текстом, а не падением; пока
+// модели скачиваются — человеку говорят именно это.
 func TestTitleWithoutEngine(t *testing.T) {
-	a := newNetApp(t, Tesseract(filepath.Join(t.TempDir(), "нет-такой-программы.exe")))
+	a := newNetApp(t)
 	code, b := a.do(local, "POST", "/api/title", "", "image/jpeg", []byte("jpeg"))
-	if code != http.StatusServiceUnavailable || !strings.Contains(string(b), "Tesseract") {
+	if code != http.StatusServiceUnavailable || !strings.Contains(string(b), "не подключено") {
 		t.Errorf("без распознавания: %d %s", code, b)
+	}
+	a = newNetApp(t, OCR(fakeOCR{msg: "скачиваю модели распознавания: 3 из 27 МБ"}))
+	code, b = a.do(local, "POST", "/api/title", "", "image/jpeg", []byte("jpeg"))
+	if code != http.StatusServiceUnavailable || !strings.Contains(string(b), "3 из 27 МБ") {
+		t.Errorf("модели ещё качаются: %d %s", code, b)
+	}
+}
+
+// Фото титула → распознавание → черновик полей и проба на диске.
+func TestTitleRecognized(t *testing.T) {
+	tsv, err := os.ReadFile(filepath.Join("..", "ocr", "testdata", "overlord-title.tsv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := newNetApp(t, OCR(fakeOCR{ready: true, tsv: tsv}))
+	code, b := a.do(local, "POST", "/api/title", "", "image/jpeg", []byte("jpeg"))
+	if code != http.StatusOK {
+		t.Fatalf("титул: %d %s", code, b)
+	}
+	var d struct {
+		Sample string `json:"sample"`
+		Title  string `json:"title"`
+	}
+	// в этой пробе название прочитано с ошибкой («‹«овберлюрд»») — проверяется путь, а не буквы
+	if err := json.Unmarshal(b, &d); err != nil || d.Sample == "" || !strings.HasPrefix(d.Title, "Операция") {
+		t.Errorf("черновик: %s %v", b, err)
 	}
 }
 

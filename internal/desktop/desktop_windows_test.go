@@ -30,24 +30,6 @@ func TestHomeIP(t *testing.T) {
 	}
 }
 
-// Tesseract ставится в Program Files и в PATH себя не прописывает — Филин находит его сам.
-func TestFindTesseract(t *testing.T) {
-	pf := t.TempDir()
-	t.Setenv("PATH", "")
-	t.Setenv("ProgramFiles(x86)", "")
-	t.Setenv("LOCALAPPDATA", "")
-	t.Setenv("ProgramFiles", pf)
-	if got := FindTesseract(); got != "" {
-		t.Errorf("нашёлся несуществующий: %q", got)
-	}
-	os.MkdirAll(filepath.Join(pf, "Tesseract-OCR"), 0o755)
-	want := filepath.Join(pf, "Tesseract-OCR", "tesseract.exe")
-	os.WriteFile(want, []byte("MZ"), 0o755)
-	if got := FindTesseract(); got != want {
-		t.Errorf("Tesseract в Program Files: %q", got)
-	}
-}
-
 // Ярлык делается и без PowerShell в PATH — так запускает .cmd проводник.
 func TestMakeShortcutWithoutPath(t *testing.T) {
 	t.Setenv("PATH", "")
