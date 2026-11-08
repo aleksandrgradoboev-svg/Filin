@@ -33,6 +33,8 @@ type TrayItem struct {
 	Do         func()
 }
 
+var quit = make(chan struct{}, 1)
+
 func Tray(tip string, items []TrayItem, onQuit func()) {
 	for _, it := range items {
 		fmt.Println(it.Title)
@@ -40,8 +42,19 @@ func Tray(tip string, items []TrayItem, onQuit func()) {
 	fmt.Println("Закрыть — Ctrl+C")
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
-	<-c
+	select {
+	case <-c:
+	case <-quit:
+	}
 	onQuit()
+}
+
+// Quit закрывает программу так же, как Ctrl+C.
+func Quit() {
+	select {
+	case quit <- struct{}{}:
+	default:
+	}
 }
 
 func Shortcuts() ([]string, error) {

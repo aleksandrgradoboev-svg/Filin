@@ -68,7 +68,9 @@ func app(d *sql.DB, path, covers string) error {
 
 	home := "http://127.0.0.1:" + *port + "/"
 	offerShortcuts(path) // до браузера: вопрос не должен оказаться под ним
-	if err := desktop.OpenBrowser(home); err != nil {
+	if restarted() {
+		log.Print("запущен после обновления: каталог в браузере уже открыт")
+	} else if err := desktop.OpenBrowser(home); err != nil {
 		log.Printf("браузер не открылся: %v", err)
 	}
 	items := []desktop.TrayItem{{Title: "Открыть каталог", Do: func() { desktop.OpenBrowser(home) }}}
@@ -77,12 +79,22 @@ func app(d *sql.DB, path, covers string) error {
 	} else {
 		items = append(items, desktop.TrayItem{Title: "Домашняя сеть не найдена — телефон не увидит", Disabled: true})
 	}
+	u := &updater{d: d, path: path, covers: covers, quit: desktop.Quit}
+	if supported() {
+		items = append(items, desktop.TrayItem{Title: "Проверить обновления", Do: func() { u.check(true) }})
+		go func() {
+			cleanupOld()                // прежняя версия после обновления
+			time.Sleep(5 * time.Second) // каталог сначала открывается, сеть — потом
+			u.check(false)
+		}()
+	}
 	desktop.Tray("Филин "+version, items, func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		srv.Shutdown(ctx)
 		log.Print("Филин закрыт")
 	})
+	u.close() // начатая замена программы доходит до конца, пока база ещё открыта
 	return nil
 }
 

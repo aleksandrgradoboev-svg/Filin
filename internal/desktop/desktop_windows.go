@@ -94,6 +94,9 @@ func Tray(tip string, items []TrayItem, onQuit func()) {
 	}, onQuit)
 }
 
+// Quit закрывает программу так же, как «Закрыть Филин» в меню значка: с вызовом onQuit.
+func Quit() { systray.Quit() }
+
 // Shortcuts — где лежат ярлыки: меню «Пуск» и рабочий стол текущего пользователя.
 func Shortcuts() ([]string, error) {
 	appData, home := os.Getenv("APPDATA"), os.Getenv("USERPROFILE")
