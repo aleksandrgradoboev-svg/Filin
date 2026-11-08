@@ -58,21 +58,21 @@ func New(st *catalog.Store, covers string, opts ...Option) (http.Handler, error)
 		o(s)
 	}
 	funcs := template.FuncMap{
-		"people":    peopleGroups,
-		"personurl": personURL,
-		"roletitle": roleTitle,
-		"roles":     func() []roleField { return roleFields },
-		"add":       func(a, b int) int { return a + b },
-		"shelf":     shelfLabel,
-		"cf":        newCopyFieldsData,
-		"date":      ruDate,
-		"who":       whoURL,
-		"days":      daysSince,
-		"loanlist":  newLoanListData,
-		"rub":       rub,
-		"price":     price,
-		"grade":     catalog.GradeName,
-		"grades":    func() []string { return catalog.Grades },
+		"people":     peopleGroups,
+		"personurl":  personURL,
+		"roletitle":  roleTitle,
+		"roles":      func() []roleField { return roleFields },
+		"add":        func(a, b int) int { return a + b },
+		"shelf":      shelfLabel,
+		"cf":         newCopyFieldsData,
+		"date":       ruDate,
+		"who":        whoURL,
+		"days":       daysSince,
+		"loanlist":   newLoanListData,
+		"rub":        rub,
+		"price":      price,
+		"grade":      catalog.GradeName,
+		"gradeScale": gradeScale,
 	}
 	for _, p := range []string{"list", "book", "edition_form", "copy_form", "scan", "loans", "borrower", "value", "series", "genres", "person", "people", "devices", "alib"} {
 		t, err := template.New("").Funcs(funcs).ParseFS(files, "tmpl/layout.html", "tmpl/copyfields.html", "tmpl/loanlist.html", "tmpl/"+p+".html")

@@ -226,7 +226,7 @@ type Copy struct {
 	History      string
 	NoLend       bool
 	Notes        string
-	Grade        int  // состояние 1–5 (см. Grades); 0 — не оценено
+	Grade        int  // состояние 1–6 по шкале alib (см. Grades); 0 — не оценено
 	Cherished    bool // «дорожу»: ценность памятная или собирательская
 	Read         bool // прочитана
 }
