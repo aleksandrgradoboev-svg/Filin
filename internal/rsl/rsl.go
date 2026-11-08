@@ -305,7 +305,7 @@ func ToCard(r Record, id string) Card {
 			e.AgeRating = m[1]
 			sub = reAge.ReplaceAllString(sub, "")
 		}
-		if sub = trimISBD(sub); sub != "" && !strings.EqualFold(sub, e.Title) {
+		if sub = trimISBD(sub); sub != "" && !strings.EqualFold(sub, e.Title) && !noiseSubtitle(sub) {
 			// подзаголовок, повторяющий вариант заглавия из 246, — не нужен; прочий — к названию
 			dup := false
 			for _, v := range r["246"] {
@@ -378,7 +378,31 @@ func ToCard(r Record, id string) Card {
 		e.Annotation = f.Sub("a")
 	}
 	if f, ok := r.first("505"); ok {
-		e.Contents = strings.ReplaceAll(f.Sub("a"), " -- ", "\n")
+		e.Contents = contents(f)
 	}
 	return c
 }
+
+// contents — содержание из 505: одной строкой в $a («Айвенго -- Примечания») или
+// по частям в $t («$t Белое движение… ; $t Вооруженные силы Юга России ; …»).
+func contents(f Field) string {
+	if a := f.Sub("a"); a != "" {
+		return strings.ReplaceAll(a, " -- ", "\n")
+	}
+	var parts []string
+	for _, s := range f.Subs {
+		if s[0] == "t" {
+			if t := trimISBD(strings.TrimRight(strings.TrimSpace(s[1]), "-")); t != "" {
+				parts = append(parts, t)
+			}
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+// reNoiseSubtitle — «сведения к заглавию», которые названием не являются: число томов
+// («в двух томах», «в 20 т.») и пометка о переводе («пер. с англ», «перевод с английского»):
+// том и язык оригинала карточка хранит в своих полях, а переводчика — среди людей.
+var reNoiseSubtitle = regexp.MustCompile(`(?i)^(в\s+\S+\s+(томах|т\.?|книгах|кн\.?)|(пер\.|перевод)\s+с\s+\S+)$`)
+
+func noiseSubtitle(s string) bool { return reNoiseSubtitle.MatchString(strings.TrimSpace(s)) }
