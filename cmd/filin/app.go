@@ -52,6 +52,8 @@ func app(d *sql.DB, path, covers string) error {
 	if info, apk, ok := bundled.App(); ok { // выпуск несёт приложение в себе — QR сразу ведёт к нему
 		opts = append(opts, web.BundledApp(info, apk))
 	}
+	// «Дополнить из РГБ» в браузере на этом компьютере — окно с поиском РГБ, как на телефоне
+	opts = append(opts, web.WithRSLPicker(desktop.PickRSL))
 	h, err := web.New(catalog.New(d), covers, opts...)
 	if err != nil {
 		return err
