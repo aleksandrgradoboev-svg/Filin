@@ -138,7 +138,7 @@ const isbnWeight = 300
 var reISBNish = regexp.MustCompile(`\d(?:[\d\-‐–— ]{8,17})[\dXxХх]`)
 
 var (
-	reISBNLabel = regexp.MustCompile(`(?i)[I1l|]SBN`) // «ISBN», как его видит распознавание
+	reISBNLabel = regexp.MustCompile(`(?i)` + isbnLabel) // «ISBN», как его видит распознавание (card.go)
 	reNotDigitX = regexp.MustCompile(`[^\dXxХх]`)
 )
 

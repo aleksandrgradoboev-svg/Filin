@@ -11,22 +11,29 @@ import (
 // Год.— 352 с.: ил.», рядом ББК, авторский знак и аннотация. Пунктуация в ней — часть
 // стандарта, поэтому разбор идёт по знакам, а не по расположению строк, как у титула.
 
+// Распознавание путает латиницу с похожей кириллицей и цифрами, и шаблоны это прощают —
+// каждая поправка списана с настоящей выдачи Tesseract по снимкам с телефона:
+// «ISBN» → «15ВЖХ», «15ВХ», «1SBN»; «.— М.:» → «--- М.:»; «317 с.:» → «317 е.:»;
+// авторский знак «Т20» → «т20»; тире в номере «5—250—02008—9».
+const isbnLabel = `(?:ISBN|[I1lі|][S5Ѕ][BВ8][NНХИЖ]{1,2})`
+
 var (
-	signRe    = regexp.MustCompile(`^([А-ЯЁ])\s?(\d{1,3})(?:\s|$)`) // авторский знак «Х 24»
-	areaRe    = regexp.MustCompile(`\.\s*[—–]\s*|\.\s+-\s+`)        // «.— » между областями описания
+	signRe    = regexp.MustCompile(`^([А-ЯЁ])\s?(\d{1,3})(?:\s|$)|^([а-яё])(\d{1,3})(?:\s|$)`) // «Х 24»; строчная — только слитно: «т20»
+	areaRe    = regexp.MustCompile(`\.\s*[—–]\s*|\.\s+-\s+|\s*[—–-]{2,}\s*`) // «.— » между областями описания
 	imprintRe = regexp.MustCompile(`^(.+?)\s*:\s*(.+?),\s*(?:\D{0,3})?(\d{4})`)
-	pagesRe   = regexp.MustCompile(`(\d+)\s*с\.`)
-	isbnRe    = regexp.MustCompile(`(?i)ISBN\s*:?\s*([\dXХ][\dXХ\s-]{8,20}[\dXХ])`)
-	bbkRe     = regexp.MustCompile(`ББК\s*([0-9][0-9.\s()-]*[0-9)])`)
+	pagesRe   = regexp.MustCompile(`(\d+)\s*[сеc]\.`)
+	isbnRe    = regexp.MustCompile(`(?i)` + isbnLabel + `\s*:?\s*([\dXХ][\dXХ\s—–-]{8,20}[\dXХ])`)
+	// ББК: «63.3(0)62», «63.3 (0) 62», «63.3(4Фр)» — в скобках бывает буквенный код страны
+	bbkRe = regexp.MustCompile(`ББК\s*([0-9][0-9.\-]*(?:\s?\([0-9А-ЯЁа-яё.\-]+\))?(?:\s?[0-9][0-9.,\-]*[0-9])?)`)
 	udkRe     = regexp.MustCompile(`УДК\s*([0-9][0-9.:\s()"-]*[0-9)])`)
 	// признаки карточки: каждый — очко; два и больше — это карточка
 	cardMarks = []*regexp.Regexp{
-		regexp.MustCompile(`[.,]\s*[—–]\s*[А-ЯЁ][а-яё-]*\.?\s*:`), // «.— М.:»
-		regexp.MustCompile(`\d+\s*с\.\s*(?::|$|[;.—])`),           // «352 с.:»
+		regexp.MustCompile(`(?:[.,]\s*[—–]|[—–-]{2,})\s*[А-ЯЁ][а-яё-]*\.?\s*:`), // «.— М.:», «--- М.:»
+		regexp.MustCompile(`\d+\s*[сеc]\.\s*(?::|$|[;.—])`),                     // «352 с.:»
 		regexp.MustCompile(`ББК|УДК`),
 		regexp.MustCompile(`(?i)/\s*(?:пер|общ|под|ред|сост|авт)`), // «/Общ. ред.»
-		regexp.MustCompile(`(?i)ISBN`),
-		regexp.MustCompile(`(?m)^[А-ЯЁ]\s?\d{1,3}\s+\S`), // «Х 24 Операция…»
+		regexp.MustCompile(`(?i)ISBN|` + isbnLabel + `\s*:?\s*[\dXХ]`), // искажённая подпись — только с номером за ней
+		regexp.MustCompile(`(?m)^(?:[А-ЯЁ]\s?|[а-яё])\d{1,3}\s+\S`), // «Х 24 Операция…», «т20 Талейран…»
 	}
 )
 
@@ -50,7 +57,11 @@ func parseCard(lines []Line, d *Draft) {
 	for i, l := range lines {
 		if m := signRe.FindStringSubmatch(l.Text); m != nil && len([]rune(l.Text)) > len([]rune(m[0]))+10 {
 			start = i
-			d.AuthorSign = m[1] + " " + m[2]
+			letter, num := m[1], m[2]
+			if letter == "" { // строчная: распознавание уменьшило заглавную
+				letter, num = strings.ToUpper(m[3]), m[4]
+			}
+			d.AuthorSign = letter + " " + num
 			break
 		}
 	}
@@ -138,9 +149,17 @@ func parseCard(lines []Line, d *Draft) {
 	for i := end + 1; i < len(lines); i++ {
 		l := lines[i]
 		if bbkRe.MatchString(l.Text) || udkRe.MatchString(l.Text) || isbnRe.MatchString(l.Text) || digitShare(l.Text) > 0.4 {
+			if len(ann) == 0 {
+				continue // шифры и номер бывают и между описанием и аннотацией (оборот Тарле, 1993)
+			}
 			break
 		}
 		if len(ann) > 0 && !adjacent(lines[i-1], l, l.Height*2) {
+			break
+		}
+		// аннотация начинается абзацем; короткая строка или «© Издательство, 1986» после
+		// шифров — уже выходные сведения, а не аннотация
+		if len(ann) == 0 && (len([]rune(l.Text)) < 50 || strings.HasPrefix(strings.TrimSpace(l.Text), "©")) {
 			break
 		}
 		ann = append(ann, l.Text)
@@ -152,7 +171,7 @@ func parseCard(lines []Line, d *Draft) {
 func extras(lines []string, d *Draft) {
 	text := strings.Join(lines, "\n")
 	for _, m := range isbnRe.FindAllStringSubmatch(text, -1) {
-		n := strings.NewReplacer("Х", "X", " ", "").Replace(m[1])
+		n := strings.NewReplacer("Х", "X", " ", "", "—", "-", "–", "-").Replace(m[1])
 		d.ISBN = append(d.ISBN, n)
 	}
 	if m := bbkRe.FindStringSubmatch(text); m != nil {
