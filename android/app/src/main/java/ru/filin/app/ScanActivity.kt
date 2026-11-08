@@ -24,11 +24,16 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
-// Сканер ISBN: камера + распознавание штрихкода на самом телефоне (ML Kit, без сети).
+// Сканер ISBN: камера + распознавание на самом телефоне (ML Kit, без сети).
 // Книжный штрихкод — EAN-13 с 978/979; магазинные наклейки с другими префиксами пропускаются.
+// Штрихкода нет (книги 1987–2000-х) — тот же кадр читается как текст, и ISBN берётся из
+// напечатанной строки «ISBN 5-85255-310-7», если сходится контрольная цифра (IsbnText).
 // Экран остаётся открытым: после сохранения книги — сразу следующая с той же полки.
 class ScanActivity : ComponentActivity() {
     private val busy = AtomicBoolean(false) // найден код — ждём экран книги, новые кадры не разбираем
@@ -44,7 +49,7 @@ class ScanActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         preview = PreviewView(this)
         status = TextView(this).apply {
-            text = "Наведите на штрихкод книги"
+            text = HINT
             setTextColor(0xFFFFFFFF.toInt())
             textSize = 17f
             gravity = Gravity.CENTER
@@ -90,7 +95,7 @@ class ScanActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         busy.set(false) // вернулись с экрана книги — сканируем следующую
-        status.text = "Наведите на штрихкод книги"
+        status.text = HINT
     }
 
     // кадр камеры (proxy.image) отдаётся ML Kit напрямую, без копирования — API помечен как требующий согласия
@@ -100,6 +105,8 @@ class ScanActivity : ComponentActivity() {
             BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_EAN_13).build()
         )
         detector = scanner
+        val reader = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        textReader = reader
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
             val provider = future.get()
@@ -113,20 +120,62 @@ class ScanActivity : ComponentActivity() {
                     proxy.close()
                     return@setAnalyzer
                 }
-                scanner.process(InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees))
+                val image = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
+                scanner.process(image)
                     .addOnSuccessListener { codes ->
-                        val v = codes.firstOrNull()?.rawValue ?: return@addOnSuccessListener
+                        val v = codes.firstOrNull()?.rawValue
+                        if (v == null) {
+                            readText(reader, image, proxy) // штрихкода нет — ищем напечатанный номер
+                            return@addOnSuccessListener
+                        }
                         if (Regex("^97[89]\\d{10}$").matches(v)) {
                             if (busy.compareAndSet(false, true)) runOnUiThread { found(v) }
                         } else {
                             runOnUiThread { status.text = "Это не книжный штрихкод: $v" }
                         }
+                        proxy.close()
                     }
-                    .addOnCompleteListener { proxy.close() }
+                    .addOnFailureListener { proxy.close() }
             }
             provider.unbindAll()
             provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, pv, analysis)
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    // напечатанный ISBN: кадр закрывается, когда текст прочитан (кадр — общий с поиском штрихкода)
+    private fun readText(reader: TextRecognizer, image: InputImage, proxy: androidx.camera.core.ImageProxy) {
+        // текст читается дольше штрихкода — не чаще трёх раз в секунду, остальные кадры
+        // достаются поиску штрихкода
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (busy.get() || now - lastText < TEXT_EVERY_MS) {
+            proxy.close()
+            return
+        }
+        lastText = now
+        reader.process(image)
+            .addOnSuccessListener { text ->
+                val all = text.textBlocks.flatMap { it.lines }.flatMap { IsbnText.find(it.text) }.distinctBy { it.isbn }
+                if (all.isNotEmpty() && busy.compareAndSet(false, true)) runOnUiThread { foundPrinted(all) }
+            }
+            .addOnCompleteListener { proxy.close() }
+    }
+
+    // на обороте многотомника два номера — тома и всего собрания («(т. 1)» и без пометки):
+    // какой нужен, решает человек; один номер — сразу дальше, как со штрихкодом
+    private fun foundPrinted(all: List<IsbnText.Found>) {
+        if (all.size == 1) {
+            found(all[0].isbn)
+            return
+        }
+        getSystemService(Vibrator::class.java)?.vibrate(VibrationEffect.createOneShot(80, VibrationEffect.DEFAULT_AMPLITUDE))
+        status.text = "Найдено несколько номеров"
+        val labels = all.map { f -> f.printed + if (f.note.isNotEmpty()) "  ${f.note}" else "" }.toTypedArray()
+        choice = android.app.AlertDialog.Builder(this)
+            .setTitle("Какой ISBN у этой книги?")
+            .setItems(labels) { _, i -> openBook(all[i].isbn) }
+            .setNegativeButton("Отмена") { _, _ -> busy.set(false); status.text = HINT }
+            .setOnCancelListener { busy.set(false); status.text = HINT }
+            .show()
     }
 
     private fun found(isbn: String) {
@@ -142,10 +191,20 @@ class ScanActivity : ComponentActivity() {
 
     // детектор ML Kit держит родные ресурсы — закрывается вместе с экраном, иначе копится при каждом открытии
     private var detector: com.google.mlkit.vision.barcode.BarcodeScanner? = null
+    private var textReader: TextRecognizer? = null
+    private var choice: android.app.AlertDialog? = null
+    @Volatile private var lastText = 0L
 
     override fun onDestroy() {
+        choice?.dismiss()
         super.onDestroy()
         analyzer.shutdown()
         detector?.close()
+        textReader?.close()
+    }
+
+    companion object {
+        private const val HINT = "Наведите на штрихкод\nили на строку «ISBN …»"
+        private const val TEXT_EVERY_MS = 330L
     }
 }
