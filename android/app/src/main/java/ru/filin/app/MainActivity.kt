@@ -92,9 +92,40 @@ class MainActivity : ComponentActivity() {
         if (::web.isInitialized) web.reload()
     }
 
+    // «Дополнить из РГБ» в карточке книги: поиск — своим браузером, как при скане; выбранная
+    // запись открывает на сервере форму дополнения (пустые поля заполнены, своё не тронуто)
+    private var fillBook: Long = 0
+    private val pickRecord = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        val record = res.data?.getStringExtra(RslActivity.EXTRA_RECORD) ?: return@registerForActivityResult
+        if (fillBook > 0 && ::web.isInitialized) {
+            web.loadUrl(Prefs.server(this) + "/book/$fillBook/edit?rsl=" + Uri.encode(record) + "#rsl")
+        }
+    }
+
+    /** Ссылка «/book/{id}/rsl?q=…» — поиск в РГБ для заведённой книги; false — не она. */
+    private fun rslLink(url: Uri): Boolean {
+        val id = rslPath.matchEntire(url.path.orEmpty())?.groupValues?.get(1)?.toLongOrNull() ?: return false
+        val q = url.getQueryParameter("q").orEmpty()
+        if (q.isBlank()) return false // искать нечего — пусть сервер покажет форму со ссылкой
+        fillBook = id
+        pickRecord.launch(Intent(this, RslActivity::class.java).putExtra(RslActivity.EXTRA_QUERY, q)
+            .putExtra(RslActivity.EXTRA_FALLBACK, url.getQueryParameter("fallback").orEmpty()))
+        return true
+    }
+
+    private val rslPath = Regex("""/book/(\d+)/rsl""")
+
+    // пока открыт поиск, Android может пересоздать этот экран (поворот, нехватка памяти):
+    // номер книги переживает это, иначе выбранная запись пропала бы молча
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putLong(STATE_FILL_BOOK, fillBook)
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        fillBook = savedInstanceState?.getLong(STATE_FILL_BOOK) ?: 0
         if (!Prefs.paired(this)) {
             startActivity(Intent(this, SetupActivity::class.java))
             finish()
@@ -116,7 +147,7 @@ class MainActivity : ComponentActivity() {
             webViewClient = object : WebViewClient() {
                 // свои страницы — внутри, чужие ссылки (Википедия, LiveLib) — в браузере
                 override fun shouldOverrideUrlLoading(view: WebView, req: WebResourceRequest): Boolean {
-                    if (req.url.host == host) return false
+                    if (req.url.host == host) return rslLink(req.url)
                     startActivity(Intent(Intent.ACTION_VIEW, req.url))
                     return true
                 }
@@ -254,6 +285,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_PATH = "path"
+        private const val STATE_FILL_BOOK = "fill_book"
         private const val PROBE_MS = 5000L
 
         /**

@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/aleksandrgradoboev-svg/filin/internal/alib"
 	"github.com/aleksandrgradoboev-svg/filin/internal/catalog"
@@ -47,6 +48,10 @@ type server struct {
 	phone  []string    // адреса для телефона в домашней сети: показываются на странице «Телефоны»
 
 	bundledInfo, bundledAPK []byte // приложение, вшитое в выпуск; пусто — только выложенное
+
+	rslPicker RSLPicker         // окно поиска РГБ на компьютере; nil — только ссылка
+	rslMu     sync.Mutex        // охраняет rslJobs
+	rslJobs   map[int64]*rslJob // открытые окна поиска по книгам
 }
 
 // New собирает обработчик приложения поверх каталога. covers — каталог, где лежат
@@ -72,11 +77,13 @@ func New(st *catalog.Store, covers string, opts ...Option) (http.Handler, error)
 		"rub":       rub,
 		"join":      strings.Join,
 		"percent":   percent,
+		"rslsearch": rslSearchURL,
+		"rslpage":   rslPageURL,
 		"price":     price,
 		"grade":     catalog.GradeName,
 		"grades":    gradeScale, // шкала сверху вниз, с пояснениями
 	}
-	for _, p := range []string{"list", "book", "edition_form", "copy_form", "scan", "loans", "borrower", "value", "series", "genres", "person", "people", "devices", "alib", "sets", "set"} {
+	for _, p := range []string{"list", "book", "edition_form", "copy_form", "scan", "loans", "borrower", "value", "series", "genres", "person", "people", "devices", "alib", "sets", "set", "rsl_wait"} {
 		t, err := template.New("").Funcs(funcs).ParseFS(files, "tmpl/layout.html", "tmpl/copyfields.html", "tmpl/loanlist.html", "tmpl/"+p+".html")
 		if err != nil {
 			return nil, err
@@ -101,6 +108,8 @@ func New(st *catalog.Store, covers string, opts ...Option) (http.Handler, error)
 	mux.HandleFunc("POST /add", s.add)
 	mux.HandleFunc("GET /book/{id}", s.book)
 	mux.HandleFunc("GET /book/{id}/edit", s.editForm)
+	mux.HandleFunc("GET /book/{id}/rsl", s.rslSearch)
+	mux.HandleFunc("GET /book/{id}/rsl/status", s.rslStatus)
 	mux.HandleFunc("POST /book/{id}/edit", s.edit)
 	mux.HandleFunc("GET /book/{id}/alib", s.alibForm)
 	mux.HandleFunc("POST /book/{id}/alib", s.alibTake)

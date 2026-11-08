@@ -31,7 +31,7 @@
   {{with .E.Annotation}}<p class="annotation pre">{{.}}</p>{{end}}
   {{with .E.Contents}}<details class="past"><summary>Содержание</summary><div class="pre">{{.}}</div></details>{{end}}
   <p><a class="btn ghost" href="/book/{{.E.ID}}/edit">✏️ Править издание</a>
-    <a class="btn ghost" href="/book/{{.E.ID}}/edit#rsl">🏛️ Дополнить из РГБ</a>
+    <a class="btn ghost" href="{{rslsearch .E}}">🏛️ Дополнить из РГБ</a>
     <a class="btn ghost" href="/book/{{.E.ID}}/alib">📚 alib: аннотация и цены</a></p>
   <details class="lend" id="set" {{if .SetErr}}open{{end}}>
     <summary>📕 В собрание сочинений</summary>

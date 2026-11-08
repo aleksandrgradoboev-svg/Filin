@@ -3,7 +3,10 @@ package web
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/aleksandrgradoboev-svg/filin/internal/catalog"
@@ -19,6 +22,179 @@ type Option func(*server)
 
 // RSLBase направляет чтение записей РГБ на другой адрес (тесты).
 func RSLBase(url string) Option { return func(s *server) { s.rsl.Base = url } }
+
+var (
+	reQuoteMarks = regexp.MustCompile(`[«»"„“()\[\]!?]`)
+	reSpaces     = regexp.MustCompile(`\s+`)
+)
+
+// rslQuery — что искать в РГБ для заведённой книги, по тем же правилам, что приложение при
+// скане (BookActivity): ISBN, если есть; иначе название до двоеточия без кавычек и фамилия
+// автора — самое длинное слово без точки («Хастингс М.» → «Хастингс»). fallback — запрос
+// только по автору, если по названию и автору пусто.
+func rslQuery(e catalog.Edition) (q, fallback string) {
+	for _, n := range e.ISBNs {
+		if n.Valid {
+			return "isbn:" + n.Norm, ""
+		}
+	}
+	title, _, _ := strings.Cut(e.Title, ":")
+	words := strings.Fields(reQuoteMarks.ReplaceAllString(title, " "))
+	var surname string
+	for _, p := range e.People {
+		if p.Role != "author" {
+			continue
+		}
+		first, _, _ := strings.Cut(p.Name, ",")
+		for _, w := range reSpaces.Split(strings.TrimSpace(first), -1) {
+			if w != "" && !strings.Contains(w, ".") && len([]rune(w)) > len([]rune(surname)) {
+				surname = w
+			}
+		}
+		break
+	}
+	var parts []string
+	if len(words) > 0 {
+		parts = append(parts, "title:("+strings.Join(words, " ")+")")
+	}
+	if surname != "" {
+		parts = append(parts, "author:"+surname)
+		if len(words) > 0 {
+			fallback = "author:" + surname
+		}
+	}
+	return strings.Join(parts, " "), fallback
+}
+
+// rslPageURL — страница поиска РГБ с запросом (одно место для формы, окна на компьютере):
+// поля isbn:/title:/author: — без них поиск тонет в полнотексте оцифровок. isbns — номера из
+// поля формы новой книги (со сканера), в карточке их ещё нет.
+func rslPageURL(e catalog.Edition, isbns string) string {
+	q, _ := rslQuery(e)
+	if good, _ := catalog.ParseISBNs(isbns); len(good) > 0 && good[0].Valid {
+		q = "isbn:" + good[0].Norm
+	}
+	return "https://search.rsl.ru/ru/search#q=" + strings.ReplaceAll(url.QueryEscape(q), "+", "%20")
+}
+
+// rslSearchURL — ссылка «Дополнить из РГБ» в карточке: /book/{id}/rsl с готовым запросом.
+// Приложение на телефоне перехватывает её и ищет своим браузером; в обычном браузере
+// сервер ведёт на форму дополнения.
+func rslSearchURL(e catalog.Edition) string {
+	q, fb := rslQuery(e)
+	v := url.Values{"q": {q}}
+	if fb != "" {
+		v.Set("fallback", fb)
+	}
+	return fmt.Sprintf("/book/%d/rsl?%s", e.ID, v.Encode())
+}
+
+// RSLPicker — окно поиска РГБ на компьютере (desktop.PickRSL): открывает страницу поиска
+// pageURL и ждёт, на какую запись нажмёт человек; ok=false — закрыл окно, ничего не выбрав.
+type RSLPicker func(pageURL string) (record string, ok bool, err error)
+
+// WithRSLPicker включает поиск РГБ в окне на компьютере. Без него (filin serve, не Windows)
+// «Дополнить из РГБ» ведёт на форму со ссылкой на поиск в браузере.
+func WithRSLPicker(p RSLPicker) Option { return func(s *server) { s.rslPicker = p } }
+
+// rslJob — открытое окно поиска для книги: страница в браузере опрашивает, чем кончилось.
+type rslJob struct {
+	done   bool
+	record string
+	err    string
+}
+
+// rslSearch — «Дополнить из РГБ» не из приложения (приложение перехватывает ссылку само):
+// на этом компьютере — окно поиска РГБ и страница ожидания; иначе — форма со ссылкой.
+// Окно открывается только по запросу с самого компьютера: нажатие с телефона (старое
+// приложение без перехвата) не должно выбрасывать окно на чужой экран.
+func (s *server) rslSearch(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if s.rslPicker == nil || !fromThisComputer(r) {
+		http.Redirect(w, r, fmt.Sprintf("/book/%d/edit#rsl", id), http.StatusSeeOther)
+		return
+	}
+	e, err := s.st.Edition(id)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	q, _ := rslQuery(e) // запрос — из карточки, а не из адреса: окно ищет только по своей книге
+	page := rslPageURL(e, "")
+	s.rslMu.Lock()
+	if s.rslJobs == nil {
+		s.rslJobs = map[int64]*rslJob{}
+	}
+	// окно уже открыто — второе не открываем; закончилось, а итог никто не забрал (вкладку
+	// ожидания закрыли) — старый итог не в счёт, открываем заново
+	if job, ok := s.rslJobs[id]; !ok || job.done {
+		job := &rslJob{}
+		s.rslJobs[id] = job
+		go func() {
+			rec, _, err := s.rslPicker(page)
+			s.rslMu.Lock()
+			defer s.rslMu.Unlock()
+			job.done, job.record = true, rec
+			if err != nil {
+				job.err = err.Error()
+			}
+		}()
+	}
+	s.rslMu.Unlock()
+	s.render(w, "rsl_wait", rslWaitPage{Title: "Поиск в РГБ", E: e, Query: q})
+}
+
+type rslWaitPage struct {
+	Title string
+	E     catalog.Edition
+	Query string
+}
+
+// rslStatus — чем кончилось окно поиска: ждём / выбрана запись (куда идти) / закрыто / ошибка.
+// Итог отдаётся один раз: следующее «Дополнить» откроет окно заново.
+func (s *server) rslStatus(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.rslMu.Lock()
+	job, ok := s.rslJobs[id]
+	var out map[string]string
+	switch {
+	case !ok:
+		out = map[string]string{"state": "none"}
+	case !job.done:
+		out = map[string]string{"state": "waiting"}
+	default:
+		delete(s.rslJobs, id)
+		switch {
+		case job.err != "":
+			out = map[string]string{"state": "error", "error": job.err}
+		case job.record != "":
+			out = map[string]string{"state": "picked",
+				"url": fmt.Sprintf("/book/%d/edit?rsl=%s#rsl", id, url.QueryEscape(job.record))}
+		default:
+			out = map[string]string{"state": "closed"}
+		}
+	}
+	s.rslMu.Unlock()
+	writeJSON(w, http.StatusOK, out)
+}
+
+// fromThisComputer — запрос пришёл с самого компьютера (127.0.0.1 / ::1).
+func fromThisComputer(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
 
 // rslCard читает запись по номеру или ссылке.
 func (s *server) rslCard(r *http.Request, ref string) (rsl.Card, error) {

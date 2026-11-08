@@ -13,7 +13,7 @@
 {{end}}
 <form method="get" action="{{if .IsNew}}/add{{else}}{{.Action}}{{end}}" class="box rsl-fill" id="rsl">
   <div class="muted">{{if .IsNew}}Заполнить{{else}}Дополнить пустые поля{{end}} из Российской государственной библиотеки:
-    <a href="https://search.rsl.ru/ru/search#q={{if .ISBNs}}isbn:{{.ISBNs}}{{else}}{{.E.Title}}{{end}}" target="_blank" rel="noreferrer">найти в РГБ ↗</a>,
+    <a href="{{rslpage .E .ISBNs}}" target="_blank" rel="noreferrer">найти в РГБ ↗</a>,
     открыть нужную запись и вставить сюда её адрес.{{if not .IsNew}} Заполненное вами не меняется.{{end}}</div>
   <div class="with-btn">
     <input name="rsl" value="{{.RSL}}" placeholder="https://search.rsl.ru/ru/record/01015228461" aria-label="Ссылка на запись РГБ">
