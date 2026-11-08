@@ -19,8 +19,8 @@ android {
         applicationId = "ru.filin.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 15
-        versionName = "0.7.0"
+        versionCode = 16
+        versionName = "0.8.0"
         // модель распознавания штрихкодов — родной код под каждый процессор; телефонам нужны только ARM,
         // x86 — для эмуляторов, и он вдвое раздувает APK
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
@@ -60,4 +60,6 @@ dependencies {
     implementation("androidx.camera:camera-view:1.6.2")
     // встроенная модель: распознаёт без сети и без сервисов Google Play
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    // напечатанный ISBN без штрихкода: распознавание текста, латиница, модель внутри приложения
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 }
