@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -34,8 +35,24 @@ var (
 // Progress — сколько скачано из скольких; зовётся по ходу скачивания.
 type Progress func(done, total int64)
 
-// PartPath — недокачанный файл.
-func PartPath(dst string) string { return dst + ".part" }
+// PartPath — недокачанный файл. В имени — начало суммы: остаток от другого выпуска не
+// продолжится байтами этого (вышла новая версия, пока старая недокачана).
+func PartPath(dst, sum string) string {
+	if len(sum) > 12 {
+		sum = sum[:12]
+	}
+	return dst + "." + sum + ".part"
+}
+
+// dropOtherParts убирает недокачанные остатки других выпусков того же файла.
+func dropOtherParts(dst, keep string) {
+	old, _ := filepath.Glob(dst + ".*.part")
+	for _, p := range old {
+		if p != keep {
+			os.Remove(p)
+		}
+	}
+}
 
 // errFatal — ошибка, после которой повторять бессмысленно (404, неверная сумма).
 type errFatal struct{ error }
@@ -47,7 +64,8 @@ func Fetch(ctx context.Context, c *http.Client, url, dst string, size int64, sum
 	if size <= 0 || size > maxSize {
 		return fmt.Errorf("странный размер файла: %d", size)
 	}
-	part := PartPath(dst)
+	part := PartPath(dst, sum)
+	dropOtherParts(dst, part)
 	fails := 0
 	best := fileSize(part) // самый дальний байт, до которого доходили: прогресс — только его рост
 	var last error
@@ -160,7 +178,9 @@ func fetchOnce(ctx context.Context, c *http.Client, url, part string, from, size
 			}
 		}
 		if rerr == io.EOF {
-			if from == 0 && got < size && resp.StatusCode == http.StatusOK {
+			// длина заявлена, файл пришёл целиком и короче заявленного в выпуске — повтор дал бы
+			// то же самое. Без заявленной длины чистый конец — это и обрыв: тогда докачка
+			if from == 0 && got < size && resp.StatusCode == http.StatusOK && resp.ContentLength >= 0 && got == resp.ContentLength {
 				// весь файл пришёл и он короче заявленного — повтор дал бы то же самое
 				f.Close()
 				os.Remove(part)

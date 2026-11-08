@@ -92,7 +92,7 @@ func TestFetchResumesAfterDrop(t *testing.T) {
 	if last != int64(len(body)) {
 		t.Errorf("ход загрузки кончился на %d из %d", last, len(body))
 	}
-	if _, err := os.Stat(PartPath(dst)); !os.IsNotExist(err) {
+	if _, err := os.Stat(PartPath(dst, sum(body))); !os.IsNotExist(err) {
 		t.Error(".part остался после успешной загрузки")
 	}
 }
@@ -149,7 +149,7 @@ func TestFetchContinuesOldPart(t *testing.T) {
 	fastRetries(t)
 	body := bytes.Repeat([]byte("q"), 50000)
 	dst := filepath.Join(t.TempDir(), "f")
-	os.WriteFile(PartPath(dst), body[:20000], 0o644)
+	os.WriteFile(PartPath(dst, sum(body)), body[:20000], 0o644)
 	var first int = -1
 	s, _ := rangeServer(t, body, func(n, from int) (int, bool) {
 		if first < 0 {
@@ -202,6 +202,55 @@ func TestFetchNoRangeAlwaysDrops(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("загрузка крутится вечно")
+	}
+}
+
+// Филина закрыли посреди загрузки: Fetch выходит сразу, недокачанное остаётся для следующего раза.
+func TestFetchCancelKeepsPart(t *testing.T) {
+	fastRetries(t)
+	body := bytes.Repeat([]byte("k"), 100000)
+	s, _ := rangeServer(t, body, func(n, from int) (int, bool) { return 30000, true })
+	dst := filepath.Join(t.TempDir(), "f")
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Fetch(ctx, s.Client(), s.URL, dst, int64(len(body)), sum(body), "filin/test", nil) }()
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("отменённая загрузка вернула успех")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("отмена не прервала загрузку")
+	}
+	if fileSize(PartPath(dst, sum(body))) == 0 {
+		t.Error("недокачанное не сохранилось")
+	}
+}
+
+// Остаток другого выпуска не продолжается байтами этого — он удаляется, качается заново.
+func TestFetchDropsOtherReleasePart(t *testing.T) {
+	fastRetries(t)
+	body := bytes.Repeat([]byte("n"), 40000)
+	dst := filepath.Join(t.TempDir(), "f")
+	other := PartPath(dst, strings.Repeat("ab", 32))
+	os.WriteFile(other, bytes.Repeat([]byte("o"), 20000), 0o644)
+	var first = -1
+	s, _ := rangeServer(t, body, func(n, from int) (int, bool) {
+		if first < 0 {
+			first = from
+		}
+		return len(body), false
+	})
+	if err := Fetch(context.Background(), s.Client(), s.URL, dst, int64(len(body)), sum(body), "filin/test", nil); err != nil {
+		t.Fatal(err)
+	}
+	if first != 0 {
+		t.Errorf("чужой остаток продолжен с %d", first)
+	}
+	if _, err := os.Stat(other); !os.IsNotExist(err) {
+		t.Error("чужой остаток не убран")
 	}
 }
 
