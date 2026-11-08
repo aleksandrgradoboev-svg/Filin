@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aleksandrgradoboev-svg/filin/internal/catalog"
@@ -110,17 +111,66 @@ func clean(s string) string {
 	return strings.Join(strings.Fields(html.UnescapeString(s)), " ")
 }
 
-// Client читает записи РГБ. Одна запись — один запрос, по действию человека.
+// Client читает записи РГБ. Одна запись — один запрос, по действию человека: прочитанное
+// помнится, и сохранение карточки после предпросмотра в РГБ второй раз не ходит.
 type Client struct {
 	HTTP *http.Client
 	Base string // для тестов; пусто — search.rsl.ru
+
+	mu    sync.Mutex
+	cache map[string]cachedRecord // номер записи → запись
+}
+
+type cachedRecord struct {
+	rec Record
+	at  time.Time
+}
+
+// CacheTTL — сколько помнить прочитанную запись: хватает, чтобы проверить форму и сохранить.
+// Каталожная запись меняется редко, но держать её дольше незачем.
+const CacheTTL = time.Hour
+
+const cacheMax = 200
+
+// Peek — недавно прочитанная запись из памяти, без обращения к РГБ.
+func (c *Client) Peek(id string) (Record, bool) { return c.cached(id) }
+
+func (c *Client) cached(id string) (Record, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.cache[id]
+	if !ok || time.Since(e.at) > CacheTTL {
+		return nil, false
+	}
+	return e.rec, true
+}
+
+func (c *Client) remember(id string, r Record) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.cache == nil || len(c.cache) >= cacheMax {
+		c.cache = map[string]cachedRecord{} // память домашнего сервера дороже пары повторных запросов
+	}
+	c.cache[id] = cachedRecord{r, time.Now()}
 }
 
 // UserAgent — честно о том, кто и зачем приходит.
 const UserAgent = "Filin/0.1 (domashniy katalog knig; odna zapis po zaprosu cheloveka)"
 
-// Fetch читает запись по номеру.
-func (c Client) Fetch(ctx context.Context, id string) (Record, error) {
+// Fetch читает запись по номеру; недавно прочитанная берётся из памяти. Запись не
+// меняется после чтения (ToCard только читает), поэтому её можно отдавать повторно.
+func (c *Client) Fetch(ctx context.Context, id string) (Record, error) {
+	if r, ok := c.cached(id); ok {
+		return r, nil
+	}
+	r, err := c.fetch(ctx, id)
+	if err == nil {
+		c.remember(id, r)
+	}
+	return r, err
+}
+
+func (c *Client) fetch(ctx context.Context, id string) (Record, error) {
 	base := c.Base
 	if base == "" {
 		base = "https://search.rsl.ru"

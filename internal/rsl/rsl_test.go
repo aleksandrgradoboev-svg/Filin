@@ -126,17 +126,37 @@ func TestRecordID(t *testing.T) {
 func TestFetchSendsUserAgentAndParses(t *testing.T) {
 	page, _ := os.ReadFile("testdata/01015228461.html")
 	var ua, path string
+	hits := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ua, path = r.UserAgent(), r.URL.Path
+		hits++
+		if r.URL.Path == "/ru/record/00000000000" {
+			http.Error(w, "нет", http.StatusNotFound)
+			return
+		}
 		w.Write(page)
 	}))
 	defer srv.Close()
-	r, err := Client{Base: srv.URL}.Fetch(context.Background(), "01015228461")
+	c := &Client{Base: srv.URL}
+	r, err := c.Fetch(context.Background(), "01015228461")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if path != "/ru/record/01015228461" || !strings.HasPrefix(ua, "Filin/") {
 		t.Errorf("запрос: %q %q", path, ua)
+	}
+	// предпросмотр и сохранение одной записи — один запрос в РГБ
+	if _, err := c.Fetch(context.Background(), "01015228461"); err != nil || hits != 1 {
+		t.Errorf("повторное чтение: %v, запросов %d", err, hits)
+	}
+	// неудачный ответ не запоминается: следующая попытка снова идёт в РГБ
+	for i := 0; i < 2; i++ {
+		if _, err := c.Fetch(context.Background(), "00000000000"); err == nil {
+			t.Error("404 принят за запись")
+		}
+	}
+	if hits != 3 {
+		t.Errorf("ошибка запомнилась: запросов %d, ждали 3", hits)
 	}
 	if _, ok := r.first("245"); !ok {
 		t.Error("запись не разобрана")

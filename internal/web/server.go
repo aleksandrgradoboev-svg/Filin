@@ -70,6 +70,7 @@ func New(st *catalog.Store, covers string, opts ...Option) (http.Handler, error)
 		"days":      daysSince,
 		"loanlist":  newLoanListData,
 		"rub":       rub,
+		"join":      strings.Join,
 		"price":     price,
 		"grade":     catalog.GradeName,
 		"grades":    func() []string { return catalog.Grades },
@@ -393,6 +394,7 @@ type editionForm struct {
 	Genres      string          // как в поле: через запятую
 	AllGenres   []catalog.Genre // подсказки
 	RSL         string          // запись РГБ, из которой заполнена форма
+	Fill        *fillReport     // правка: что запись РГБ добавила к уже заведённой книге
 
 	coverJPEG   []byte // загруженная и уже обработанная обложка
 	removeCover bool
@@ -623,9 +625,7 @@ func (s *server) add(w http.ResponseWriter, r *http.Request) {
 	if f.RSL = r.FormValue("rsl"); f.RSL != "" {
 		if id, err := rsl.RecordID(f.RSL); err == nil {
 			f.E.Source, f.E.SourceURL = "rsl", rsl.RecordURL(id)
-			if c, err := s.rslCard(r, id); err == nil {
-				lives = c.Lives
-			}
+			lives = s.rememberedLives(id)
 		}
 	}
 	if len(f.Errors) > 0 {
@@ -669,10 +669,29 @@ func (s *server) editForm(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	f := editionForm{Title: "Правка: " + e.Title, Action: fmt.Sprintf("/book/%d/edit", id), E: e,
-		People: peopleByRole(e.People), ISBNs: isbnList(e.ISBNs), Genres: strings.Join(e.Genres, ", ")}
-	if e.Year != 0 {
-		f.Year = strconv.Itoa(e.Year)
+	f := editionForm{Title: "Правка: " + e.Title, Action: fmt.Sprintf("/book/%d/edit", id), E: e}
+	// «Дополнить из РГБ»: пустые поля заполняются записью, заполненные остаются как есть —
+	// сохраняет человек, посмотрев, что добавилось
+	if ref := strings.TrimSpace(r.URL.Query().Get("rsl")); ref != "" {
+		c, err := s.rslCard(r, ref)
+		if err != nil {
+			f.Errors = append(f.Errors, "РГБ: "+err.Error())
+			f.RSL = ref // ссылка остаётся в поле — поправить опечатку, а не вставлять заново
+		} else {
+			rep := fillEmpty(&f.E, c.Edition)
+			f.Fill, f.RSL = &rep, c.Edition.SourceURL
+			// откуда дополнено — в заметки формы: видно до сохранения, можно убрать
+			if line := "Дополнено из РГБ: " + f.RSL; !strings.Contains(f.E.Notes, f.RSL) {
+				if f.E.Notes != "" {
+					line = "\n" + line
+				}
+				f.E.Notes += line
+			}
+		}
+	}
+	f.People, f.ISBNs, f.Genres = peopleByRole(f.E.People), isbnList(f.E.ISBNs), strings.Join(f.E.Genres, ", ")
+	if f.E.Year != 0 {
+		f.Year = strconv.Itoa(f.E.Year)
 	}
 	s.renderEditionForm(w, f)
 }
@@ -697,6 +716,10 @@ func (s *server) edit(w http.ResponseWriter, r *http.Request) {
 	readEdition(r, &f)
 	readCover(r, &f)
 	f.E.ID = id
+	// дополнено из РГБ — годы жизни людей из той же записи; ссылка на запись уже стоит в
+	// заметках формы, и человек мог её убрать — заметки берутся как есть
+	f.RSL = r.FormValue("rsl")
+	lives := onlyPeople(s.rememberedLives(f.RSL), f.E.People)
 	if len(f.Errors) > 0 {
 		// форма возвращается с ошибкой — текущую обложку показываем, а не теряем
 		if e, err := s.st.Edition(id); err == nil {
@@ -709,6 +732,7 @@ func (s *server) edit(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	s.saveLives(lives)
 	if err := s.saveCover(id, &f); err != nil {
 		s.fail(w, err)
 		return
