@@ -7,6 +7,11 @@ package paddle
 // одинаковы для ONNX Runtime 1.23 и новее; запрашивается таблица версии 23.
 // Номера сверены с github.com/younland/onnxruntime (api.go, MIT, сгенерирован по
 // заголовкам 1.23–1.31) и проверены вызовами на onnxruntime.dll 1.31.1.
+//
+// Всё, чей адрес уходит в ONNX Runtime, лежит в куче (поля структур, созданных new/make):
+// стек горутины при росте переезжает, и адрес переменной со стека, переданный дальше
+// обычной функцией, а не прямо в syscall.SyscallN, к моменту вызова указывал бы в пустоту.
+// Куча в Go не перемещается.
 
 import (
 	"errors"
@@ -55,6 +60,10 @@ type runtimeORT struct {
 	api     uintptr
 	env     uintptr
 	memInfo uintptr
+	name    *byte
+
+	mu   sync.Mutex // newSession: opts — общее поле
+	opts uintptr
 }
 
 var (
@@ -83,17 +92,16 @@ func openORT(dll string) (*runtimeORT, error) {
 	if apiBase == 0 {
 		return nil, errors.New("распознавание: OrtGetApiBase вернул пусто")
 	}
-	getAPI := *(*uintptr)(unsafe.Pointer(apiBase)) // OrtApiBase.GetApi — первое поле
+	getAPI := *(*uintptr)(unsafe.Pointer(apiBase)) //nolint:govet // адрес из библиотеки, не из Go
 	api, _, _ := syscall.SyscallN(getAPI, ortAPIVersion)
 	if api == 0 {
 		return nil, fmt.Errorf("распознавание: ONNX Runtime старше 1.%d", ortAPIVersion)
 	}
 	r := &runtimeORT{api: api}
-	name, _ := syscall.BytePtrFromString("filin")
-	if err := r.call(fnCreateEnv, ortLoggingLevelError, uintptr(unsafe.Pointer(name)), uintptr(unsafe.Pointer(&r.env))); err != nil {
+	r.name, _ = syscall.BytePtrFromString("filin")
+	if err := r.call(fnCreateEnv, ortLoggingLevelError, uintptr(unsafe.Pointer(r.name)), uintptr(unsafe.Pointer(&r.env))); err != nil {
 		return nil, err
 	}
-	runtime.KeepAlive(name)
 	if err := r.call(fnCreateCpuMemoryInfo, ortArenaAllocator, ortMemTypeDefault, uintptr(unsafe.Pointer(&r.memInfo))); err != nil {
 		return nil, err
 	}
@@ -101,7 +109,7 @@ func openORT(dll string) (*runtimeORT, error) {
 }
 
 func (r *runtimeORT) fn(i int) uintptr {
-	return *(*uintptr)(unsafe.Pointer(r.api + uintptr(i)*unsafe.Sizeof(uintptr(0))))
+	return *(*uintptr)(unsafe.Pointer(r.api + uintptr(i)*unsafe.Sizeof(uintptr(0)))) //nolint:govet // таблица ONNX Runtime
 }
 
 // call — вызов функции, возвращающей OrtStatus*: не пусто — ошибка с текстом ONNX Runtime.
@@ -128,7 +136,7 @@ func cString(p uintptr) string {
 	}
 	var b []byte
 	for {
-		c := *(*byte)(unsafe.Pointer(p))
+		c := *(*byte)(unsafe.Pointer(p)) //nolint:govet // строка ONNX Runtime
 		if c == 0 {
 			return string(b)
 		}
@@ -139,98 +147,105 @@ func cString(p uintptr) string {
 
 // session — загруженная модель с одним входом и одним выходом (так устроены модели PaddleOCR).
 type session struct {
-	rt      *runtimeORT
-	h       uintptr
-	in, out *byte
-	inName  string
-	outName string
-	mu      sync.Mutex // одна сессия — один запуск за раз: так проще и памяти меньше
+	rt    *runtimeORT
+	h     uintptr
+	model []byte // ONNX Runtime копирует модель, но держим до закрытия — на всякий случай
+
+	mu      sync.Mutex // одна сессия — один запуск за раз; поля ниже — места для ответов ONNX Runtime
+	in      [1]*byte
+	out     [1]*byte
+	inputs  [1]uintptr
+	output  uintptr
+	shape   [8]int64
+	info    uintptr
+	ndims   uintptr
+	dataPtr uintptr
 }
 
 func (r *runtimeORT) newSession(model []byte, inName, outName string, threads int) (*session, error) {
-	var opts uintptr
-	if err := r.call(fnCreateSessionOptions, uintptr(unsafe.Pointer(&opts))); err != nil {
+	s := &session{rt: r, model: model}
+	s.in[0], _ = syscall.BytePtrFromString(inName)
+	s.out[0], _ = syscall.BytePtrFromString(outName)
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.opts = 0
+	if err := r.call(fnCreateSessionOptions, uintptr(unsafe.Pointer(&r.opts))); err != nil {
 		return nil, err
 	}
-	defer r.release(fnReleaseSessionOptions, opts)
-	if err := r.call(fnSetSessionGraphOptimizationLevel, opts, ortEnableAll); err != nil {
+	defer r.release(fnReleaseSessionOptions, r.opts)
+	if err := r.call(fnSetSessionGraphOptimizationLevel, r.opts, ortEnableAll); err != nil {
 		return nil, err
 	}
 	if threads > 0 {
-		if err := r.call(fnSetIntraOpNumThreads, opts, uintptr(threads)); err != nil {
+		if err := r.call(fnSetIntraOpNumThreads, r.opts, uintptr(threads)); err != nil {
 			return nil, err
 		}
 	}
-	s := &session{rt: r, inName: inName, outName: outName}
-	if err := r.call(fnCreateSessionFromArray, r.env, uintptr(unsafe.Pointer(&model[0])), uintptr(len(model)), opts,
+	if err := r.call(fnCreateSessionFromArray, r.env, uintptr(unsafe.Pointer(&s.model[0])), uintptr(len(s.model)), r.opts,
 		uintptr(unsafe.Pointer(&s.h))); err != nil {
 		return nil, err
 	}
-	runtime.KeepAlive(model)
-	s.in, _ = syscall.BytePtrFromString(inName)
-	s.out, _ = syscall.BytePtrFromString(outName)
 	return s, nil
 }
 
 func (s *session) close() {
-	if s != nil {
+	if s != nil && s.h != 0 {
 		s.rt.release(fnReleaseSession, s.h)
 		s.h = 0
 	}
 }
 
-// run — один прогон: вход float32 формы shape, выход — копия данных и форма.
+// run — один прогон: вход float32 формы shape (до 8 измерений), выход — копия данных и форма.
+// data должен лежать в куче (make с размером, известным только при работе, — так и есть).
 func (s *session) run(data []float32, shape []int64) ([]float32, []int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r := s.rt
-	var input uintptr
+	if len(shape) > len(s.shape) || len(data) == 0 {
+		return nil, nil, errors.New("распознавание: неверная форма входа")
+	}
+	copy(s.shape[:], shape)
+	s.inputs[0] = 0
 	if err := r.call(fnCreateTensorWithDataAsOrtValue, r.memInfo, uintptr(unsafe.Pointer(&data[0])), uintptr(len(data)*4),
-		uintptr(unsafe.Pointer(&shape[0])), uintptr(len(shape)), ortTensorFloat, uintptr(unsafe.Pointer(&input))); err != nil {
+		uintptr(unsafe.Pointer(&s.shape[0])), uintptr(len(shape)), ortTensorFloat, uintptr(unsafe.Pointer(&s.inputs[0]))); err != nil {
 		return nil, nil, err
 	}
-	defer r.release(fnReleaseValue, input)
-	var output uintptr
-	inNames, outNames := []*byte{s.in}, []*byte{s.out}
-	inputs := []uintptr{input}
-	err := r.call(fnRun, s.h, 0, uintptr(unsafe.Pointer(&inNames[0])), uintptr(unsafe.Pointer(&inputs[0])), 1,
-		uintptr(unsafe.Pointer(&outNames[0])), 1, uintptr(unsafe.Pointer(&output)))
+	defer r.release(fnReleaseValue, s.inputs[0])
+	s.output = 0
+	err := r.call(fnRun, s.h, 0, uintptr(unsafe.Pointer(&s.in[0])), uintptr(unsafe.Pointer(&s.inputs[0])), 1,
+		uintptr(unsafe.Pointer(&s.out[0])), 1, uintptr(unsafe.Pointer(&s.output)))
 	runtime.KeepAlive(data)
-	runtime.KeepAlive(shape)
-	runtime.KeepAlive(inNames)
-	runtime.KeepAlive(outNames)
-	runtime.KeepAlive(inputs)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer r.release(fnReleaseValue, output)
+	defer r.release(fnReleaseValue, s.output)
 
-	var info uintptr
-	if err := r.call(fnGetTensorTypeAndShape, output, uintptr(unsafe.Pointer(&info))); err != nil {
+	s.info = 0
+	if err := r.call(fnGetTensorTypeAndShape, s.output, uintptr(unsafe.Pointer(&s.info))); err != nil {
 		return nil, nil, err
 	}
-	defer r.release(fnReleaseTensorTypeAndShapeInfo, info)
-	var n uintptr
-	if err := r.call(fnGetDimensionsCount, info, uintptr(unsafe.Pointer(&n))); err != nil {
+	defer r.release(fnReleaseTensorTypeAndShapeInfo, s.info)
+	if err := r.call(fnGetDimensionsCount, s.info, uintptr(unsafe.Pointer(&s.ndims))); err != nil {
 		return nil, nil, err
 	}
-	dims := make([]int64, n)
-	if n > 0 {
-		if err := r.call(fnGetDimensions, info, uintptr(unsafe.Pointer(&dims[0])), n); err != nil {
-			return nil, nil, err
-		}
+	if s.ndims == 0 || s.ndims > uintptr(len(s.shape)) {
+		return nil, nil, fmt.Errorf("распознавание: у ответа модели %d измерений", s.ndims)
 	}
+	if err := r.call(fnGetDimensions, s.info, uintptr(unsafe.Pointer(&s.shape[0])), s.ndims); err != nil {
+		return nil, nil, err
+	}
+	dims := append([]int64(nil), s.shape[:s.ndims]...)
 	total := int64(1)
 	for _, d := range dims {
 		total *= d
 	}
-	var p uintptr
-	if err := r.call(fnGetTensorMutableData, output, uintptr(unsafe.Pointer(&p))); err != nil {
+	if err := r.call(fnGetTensorMutableData, s.output, uintptr(unsafe.Pointer(&s.dataPtr))); err != nil {
 		return nil, nil, err
 	}
 	out := make([]float32, total)
 	if total > 0 {
-		copy(out, unsafe.Slice((*float32)(unsafe.Pointer(p)), total))
+		copy(out, unsafe.Slice((*float32)(unsafe.Pointer(s.dataPtr)), total)) //nolint:govet // память ONNX Runtime
 	}
 	return out, dims, nil
 }
