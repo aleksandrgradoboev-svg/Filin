@@ -10,11 +10,11 @@
 <div class="row2">
   <label>Состояние <span class="hint">шкала alib.ru</span>
     <select name="grade"><option value="0" {{if eq 0 $.C.Grade}}selected{{end}}>— не оценено —</option>
-      {{range gradeScale}}<option value="{{.N}}" title="{{.Hint}}" {{if eq .N $.C.Grade}}selected{{end}}>{{.Name}}</option>{{end}}</select></label>
+      {{range grades}}<option value="{{.N}}" title="{{.Hint}}" {{if eq .N $.C.Grade}}selected{{end}}>{{.Name}}</option>{{end}}</select></label>
   <label>Подробности состояния <span class="hint">штампы, надписи, подчёркивания — указывать</span><input name="condition" value="{{.C.Condition}}" placeholder="например: корешок потёрт, библиотечный штамп"></label>
 </div>
 <details class="past"><summary>Что значит состояние</summary>
-  <ul class="vals">{{range gradeScale}}<li><b>{{.Name}}</b> — {{.Hint}}</li>{{end}}</ul>
+  <ul class="vals">{{range grades}}<li><b>{{.Name}}</b> — {{.Hint}}</li>{{end}}</ul>
   <p class="hint">Штампы библиотек, дарственные надписи, подчёркивания оценку не снижают, но указываются в подробностях. Цена магазина и наклейки — не недостаток. По шкале alib.ru.</p>
 </details>
 <label>Заметки к экземпляру<textarea name="copy_notes" rows="2">{{.C.Notes}}</textarea></label>
