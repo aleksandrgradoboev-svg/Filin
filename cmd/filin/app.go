@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/aleksandrgradoboev-svg/filin/internal/backup"
@@ -52,8 +53,8 @@ func app(d *sql.DB, path, covers string) error {
 	if info, apk, ok := bundled.App(); ok { // выпуск несёт приложение в себе — QR сразу ведёт к нему
 		opts = append(opts, web.BundledApp(info, apk))
 	}
-	// «Дополнить из РГБ» в браузере на этом компьютере — окно с поиском РГБ, как на телефоне
-	opts = append(opts, web.WithRSLPicker(desktop.PickRSL))
+	// «Дополнить из РГБ» в браузере на этом компьютере — поиск и список «Это она», как на телефоне
+	opts = append(opts, rslSearch()...)
 	h, err := web.New(catalog.New(d), covers, opts...)
 	if err != nil {
 		return err
@@ -229,4 +230,23 @@ func uninstall() error {
 	}
 	fmt.Println("База и фото не тронуты.")
 	return nil
+}
+
+// rslSearch — поиск РГБ со списком: только в Windows, где есть встроенный браузер. Без него
+// «Дополнить из РГБ» ведёт на форму со ссылкой, как раньше, а не на страницу с ошибкой.
+func rslSearch() []web.Option {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+	return []web.Option{web.WithRSLSearcher(searchRSL)}
+}
+
+// searchRSL — поиск РГБ невидимым браузером (desktop) в виде, понятном веб-части.
+func searchRSL(pageURL, fallback string) (web.RSLResults, error) {
+	r, err := desktop.SearchRSL(pageURL, fallback)
+	out := web.RSLResults{Query: r.Query, Info: r.Info}
+	for _, f := range r.Items {
+		out.Items = append(out.Items, web.RSLFound{ID: f.ID, Author: f.Author, Info: f.Info})
+	}
+	return out, err
 }

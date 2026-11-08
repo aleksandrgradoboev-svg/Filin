@@ -189,7 +189,8 @@ func run(cmd, path, addr string, args []string) error {
 }
 
 func serve(d *sql.DB, addr, covers string) error {
-	opts := []web.Option{web.Tesseract(*tesseract)}
+	// поиск РГБ со списком — и здесь: по нажатию с этого же компьютера, как в программе
+	opts := append([]web.Option{web.Tesseract(*tesseract)}, rslSearch()...)
 	if info, apk, ok := bundled.App(); ok {
 		opts = append(opts, web.BundledApp(info, apk))
 	}

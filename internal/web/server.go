@@ -49,9 +49,9 @@ type server struct {
 
 	bundledInfo, bundledAPK []byte // приложение, вшитое в выпуск; пусто — только выложенное
 
-	rslPicker RSLPicker         // окно поиска РГБ на компьютере; nil — только ссылка
-	rslMu     sync.Mutex        // охраняет rslJobs
-	rslJobs   map[int64]*rslJob // открытые окна поиска по книгам
+	rslSearcher RSLSearcher       // поиск РГБ со списком на компьютере; nil — только ссылка
+	rslMu       sync.Mutex        // охраняет rslJobs
+	rslJobs     map[int64]*rslJob // идущие поиски по книгам
 }
 
 // New собирает обработчик приложения поверх каталога. covers — каталог, где лежат

@@ -1,25 +1,39 @@
 {{define "content"}}
 <p><a href="/book/{{.E.ID}}">← {{.E.Title}}</a></p>
-<h1>🏛️ Поиск в РГБ</h1>
-<div class="note" id="wait">
-  <b>Открыто окно с поиском РГБ.</b> Найдите там своё издание и нажмите на него — окно закроется,
-  а здесь откроется карточка с заполненными пустыми полями. Ничего подходящего — просто закройте окно.
-  <div class="muted">Ищу: {{.Query}}</div>
-</div>
+<h1 id="head">🏛️ Ищу в РГБ…</h1>
+<p class="muted" id="status">Ищу: {{.Query}}. Обычно это несколько секунд.</p>
 <div class="note err" id="fail" hidden></div>
-<p class="hint">Окно не появилось или удобнее в своём браузере —
-  <a href="/book/{{.E.ID}}/edit#rsl">вставить ссылку на запись вручную</a>.</p>
+<ul class="found" id="found"></ul>
+<p class="hint">Нет вашего издания — <a href="/book/{{.E.ID}}/edit#rsl">вставить ссылку на запись вручную</a>.</p>
 <script>
 (function(){
-  var wait = document.getElementById('wait'), fail = document.getElementById('fail');
+  var head = document.getElementById('head'), status = document.getElementById('status'),
+      fail = document.getElementById('fail'), list = document.getElementById('found');
+  function el(tag, cls, text){ var e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
+  function show(s){
+    head.textContent = '🏛️ Найдено в РГБ';
+    var by = s.query && s.query !== {{.Query}} ? ' (по «' + s.query + '» — по названию ничего)' : '';
+    if (!s.items.length) {
+      head.textContent = '🏛️ В РГБ ничего не нашлось';
+      status.textContent = 'Искал: ' + (s.query || {{.Query}}) + '. Проверьте название и автора в карточке.';
+      return;
+    }
+    status.textContent = (s.info.split(',')[0] || 'Найдено') + by + '. Выберите своё издание:';
+    s.items.forEach(function(it){
+      var li = el('li'), text = el('div');
+      if (it.author) text.appendChild(el('div', 'who', it.author));
+      text.appendChild(el('div', '', it.info));
+      var b = el('a', 'btn', 'Это она'); b.href = it.url;
+      li.appendChild(text); li.appendChild(b); list.appendChild(li);
+    });
+  }
   function poll(){
     fetch('/book/{{.E.ID}}/rsl/status', {cache: 'no-store'}).then(function(r){ return r.json(); }).then(function(s){
-      if (s.state === 'picked') { location.href = s.url; return; }
-      if (s.state === 'waiting') { setTimeout(poll, 1000); return; }
-      wait.hidden = true; fail.hidden = false;
-      fail.textContent = s.state === 'error' ? s.error :
-        s.state === 'closed' ? 'Окно поиска закрыто — запись не выбрана.' : 'Окно поиска не открыто.';
-    }).catch(function(){ setTimeout(poll, 2000); });
+      if (s.state === 'waiting') { setTimeout(poll, 700); return; }
+      if (s.state === 'found') { show(s); return; }
+      head.textContent = '🏛️ Поиск в РГБ не удался'; status.hidden = true; fail.hidden = false;
+      fail.textContent = s.state === 'error' ? s.error : 'Поиск не запущен — нажмите «Дополнить из РГБ» в карточке ещё раз.';
+    }).catch(function(){ setTimeout(poll, 1500); });
   }
   poll();
 })();

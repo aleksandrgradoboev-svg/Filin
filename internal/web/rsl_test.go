@@ -217,107 +217,91 @@ func TestRSLQuery(t *testing.T) {
 	}
 }
 
-// «Дополнить из РГБ» в браузере на компьютере: окно поиска (здесь — подставное) открывается
-// с запросом из карточки, страница ожидания узнаёт итог и ведёт в форму дополнения.
-func TestRSLPickerWindow(t *testing.T) {
-	type call struct{ q string }
+// «Дополнить из РГБ» в браузере на компьютере — как на телефоне: поиск (здесь — подставной
+// невидимый браузер) по запросу из карточки, на странице Филина — список «Это она».
+func TestRSLSearchList(t *testing.T) {
+	type call struct{ page, fb string }
 	calls := make(chan call, 4)
-	answer := make(chan [2]string, 4) // запись, ошибка
-	picker := func(q string) (string, bool, error) {
-		calls <- call{q}
-		a := <-answer
-		if a[1] != "" {
-			return "", false, errors.New(a[1])
-		}
-		return a[0], a[0] != "", nil
+	answer := make(chan func() (RSLResults, error), 4)
+	search := func(page, fb string) (RSLResults, error) {
+		calls <- call{page, fb}
+		return (<-answer)()
 	}
-	a := newNetApp(t, WithRSLPicker(picker))
-	id, _ := a.st.AddEdition(&catalog.Edition{Title: "Операция «Оверлорд»: второй фронт",
-		People: []catalog.Person{{Name: "Хастингс М.", Role: "author"}}})
+	a := newNetApp(t, WithRSLSearcher(search))
+	id, _ := a.st.AddEdition(&catalog.Edition{Title: "Водители фрегатов: Книга о великих мореплавателях",
+		People: []catalog.Person{{Name: "Николай Чуковский", Role: "author"}}})
 	book := "/book/" + strconv.FormatInt(id, 10)
-	status := func() map[string]string {
-		_, b := a.do(local, "GET", book+"/rsl/status", "", "", nil)
-		var s map[string]string
-		if err := json.Unmarshal(b, &s); err != nil {
-			t.Fatalf("статус: %s", b)
+	status := func() map[string]any {
+		var s map[string]any
+		for i := 0; i < 200; i++ {
+			_, b := a.do(local, "GET", book+"/rsl/status", "", "", nil)
+			if err := json.Unmarshal(b, &s); err != nil {
+				t.Fatalf("статус: %s", b)
+			}
+			if s["state"] != "waiting" {
+				return s
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
 		return s
 	}
 
-	// с компьютера: страница ожидания, окно открыто с запросом из карточки (не из адреса)
+	// с компьютера: страница «Ищу в РГБ», поиск по запросу из карточки (не из адреса) с запасным по автору
 	code, b := a.do(local, "GET", book+"/rsl?q=подмена", "", "", nil)
-	if code != http.StatusOK || !strings.Contains(html.UnescapeString(string(b)), "Открыто окно с поиском РГБ") {
-		t.Fatalf("страница ожидания: %d", code)
+	if code != http.StatusOK || !strings.Contains(html.UnescapeString(string(b)), "Ищу в РГБ") {
+		t.Fatalf("страница поиска: %d", code)
 	}
-	want := "https://search.rsl.ru/ru/search#q=" + strings.ReplaceAll(url.QueryEscape("title:(Операция Оверлорд) author:Хастингс"), "+", "%20")
-	if c := <-calls; c.q != want {
-		t.Errorf("страница в окне: %q, ждали %q", c.q, want)
+	c := <-calls
+	want := "https://search.rsl.ru/ru/search#q=" + strings.ReplaceAll(url.QueryEscape("title:(Водители фрегатов) author:Чуковский"), "+", "%20")
+	if c.page != want || c.fb != "author:Чуковский" {
+		t.Errorf("поиск: %q / %q", c.page, c.fb)
 	}
-	if s := status(); s["state"] != "waiting" {
-		t.Errorf("пока окно открыто: %v", s)
-	}
-	// повторное нажатие, пока окно открыто, второго окна не открывает
+	// второе нажатие, пока ищем, второго поиска не запускает
 	a.do(local, "GET", book+"/rsl", "", "", nil)
 	select {
 	case <-calls:
-		t.Error("второе окно для той же книги")
+		t.Error("второй поиск для той же книги")
 	default:
 	}
-
-	answer <- [2]string{"01015228461", ""}
-	var s map[string]string
-	for i := 0; i < 100; i++ {
-		if s = status(); s["state"] != "waiting" {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	answer <- func() (RSLResults, error) {
+		return RSLResults{Query: "author:Чуковский", Info: "Результатов: 2, найдено", Items: []RSLFound{
+			{ID: "01001111111", Author: "Чуковский Н. К.", Info: "Водители фрегатов. 1985"},
+			{ID: "../../etc", Author: "подлог", Info: "не запись"}, // номер не похож на запись — в список не идёт
+			{ID: "01002222222", Author: "Чуковский Н. К.", Info: "Водители фрегатов. 1956"},
+		}}, nil
 	}
-	if s["state"] != "picked" || s["url"] != book+"/edit?rsl=01015228461#rsl" {
-		t.Fatalf("после выбора: %v", s)
+	s := status()
+	items, _ := s["items"].([]any)
+	if s["state"] != "found" || s["query"] != "author:Чуковский" || len(items) != 2 {
+		t.Fatalf("выдача: %v", s)
+	}
+	first := items[0].(map[string]any)
+	if first["url"] != book+"/edit?rsl=01001111111#rsl" || first["info"] != "Водители фрегатов. 1985" {
+		t.Errorf("«Это она»: %v", first)
 	}
 	if s := status(); s["state"] != "none" {
 		t.Errorf("итог отдан дважды: %v", s)
 	}
 
-	// итог никто не забрал (вкладку ожидания закрыли) — следующее нажатие открывает окно заново
+	// ошибка поиска — сообщением; незабранный итог не мешает искать заново
 	a.do(local, "GET", book+"/rsl", "", "", nil)
 	<-calls
-	answer <- [2]string{"", ""}
+	answer <- func() (RSLResults, error) {
+		return RSLResults{}, errors.New("РГБ не ответила за 20 секунд")
+	}
 	time.Sleep(50 * time.Millisecond)
-	a.do(local, "GET", book+"/rsl", "", "", nil)
+	a.do(local, "GET", book+"/rsl", "", "", nil) // итог ошибки никто не забрал
 	select {
 	case <-calls:
-		answer <- [2]string{"02000000000", ""}
+		answer <- func() (RSLResults, error) { return RSLResults{Info: "Результатов: 0"}, nil }
 	case <-time.After(time.Second):
-		t.Fatal("после незабранного итога окно не открылось заново")
+		t.Fatal("после незабранного итога поиск не запустился заново")
 	}
-	for i := 0; i < 100; i++ {
-		if s := status(); s["state"] != "waiting" {
-			if s["url"] != book+"/edit?rsl=02000000000#rsl" {
-				t.Errorf("отдан старый итог: %v", s)
-			}
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	if s := status(); s["state"] != "found" || len(s["items"].([]any)) != 0 {
+		t.Errorf("пустая выдача: %v", s)
 	}
 
-	// закрыл без выбора; ошибка окна — сообщением
-	for _, c := range []struct{ rec, err, want string }{{"", "", "closed"}, {"", "окна нет", "error"}} {
-		a.do(local, "GET", book+"/rsl", "", "", nil)
-		<-calls
-		answer <- [2]string{c.rec, c.err}
-		for i := 0; i < 100; i++ {
-			if s = status(); s["state"] != "waiting" {
-				break
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-		if s["state"] != c.want || (c.err != "" && s["error"] != c.err) {
-			t.Errorf("%s: %v", c.want, s)
-		}
-	}
-
-	// не с компьютера (телефон со старым приложением) — окно на чужом экране не открывается
+	// не с компьютера — поиск не запускается, форма со ссылкой
 	_, page := a.do(local, "POST", "/devices/code", "", "", nil)
 	m := regexp.MustCompile(`class="code">(\d{6})<`).FindSubmatch(page)
 	_, pb := a.do(phone, "POST", "/api/pair", "", "application/json", []byte(`{"code":"`+string(m[1])+`","name":"Realme"}`))
@@ -328,7 +312,27 @@ func TestRSLPickerWindow(t *testing.T) {
 	}
 	select {
 	case <-calls:
-		t.Error("окно открылось по запросу с телефона")
+		t.Error("поиск запущен по запросу с телефона")
 	default:
+	}
+}
+
+// Одна книга, если одно название продолжает другое подзаголовком — в любую сторону.
+func TestSameTitle(t *testing.T) {
+	for _, c := range []struct {
+		card, record string
+		want         bool
+	}{
+		{"Первая оборона Севастополя", "Первая оборона Севастополя, 1854-1855 гг. \"Русская Троя\"", true},
+		{"Водители фрегатов: Книга о великих мореплавателях", "Водители фрегатов", true},
+		{"Водители фрегатов", "Водители", true},
+		{"Водители фрегатов", "Водитель фрегата", false},
+		{"Мир", "Мировая история", false}, // слово целиком, не начало слова
+		{"", "Что угодно", false},
+		{"Что угодно", "", false},
+	} {
+		if got := sameTitle(c.card, c.record); got != c.want {
+			t.Errorf("sameTitle(%q, %q) = %v, want %v", c.card, c.record, got, c.want)
+		}
 	}
 }
