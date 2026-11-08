@@ -1,0 +1,21 @@
+{{define "content"}}
+<h1>Удалить книгу?</h1>
+<p><a href="/book/{{.E.ID}}"><b>{{.E.Title}}</b>{{if .E.Volume}} {{.E.Volume}}{{end}}</a>{{if or .E.Publisher .E.Year}}
+  <span class="muted">— {{.E.Publisher}}{{if and .E.Publisher .E.Year}}, {{end}}{{if .E.Year}}{{.E.Year}}{{end}}</span>{{end}}</p>
+{{if .F.Lent}}
+<div class="note err">Экземпляр этой книги сейчас на руках. Сначала отметьте возврат в карточке — иначе долг пропадёт вместе с книгой.</div>
+<p><a class="btn" href="/book/{{.E.ID}}">Вернуться к книге</a></p>
+{{else}}
+<p>Из каталога уйдёт описание издания{{if .E.Cover}} с обложкой{{end}}, а вместе с ним:</p>
+<ul>
+  <li>экземпляров: <b>{{.F.Copies}}</b></li>
+  {{if .F.Valuations}}<li>оценок: <b>{{.F.Valuations}}</b> — суммы и основания пропадут</li>{{end}}
+  {{if .F.PastLoans}}<li>записей «кто брал раньше»: <b>{{.F.PastLoans}}</b></li>{{end}}
+  {{if .F.Places}}<li>мест в собраниях сочинений: <b>{{.F.Places}}</b> — сами места останутся пустыми</li>{{end}}
+</ul>
+<p class="muted">Вернуть удалённое можно только из резервной копии (кнопка «Копия» в меню наверху).</p>
+<form method="post" action="/book/{{.E.ID}}/delete" class="danger">
+  <button class="btn">🗑️ Удалить насовсем</button> <a href="/book/{{.E.ID}}">отмена</a>
+</form>
+{{end}}
+{{end}}

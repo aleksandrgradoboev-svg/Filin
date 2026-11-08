@@ -89,7 +89,7 @@ func New(st *catalog.Store, covers string, opts ...Option) (http.Handler, error)
 		"grade":     catalog.GradeName,
 		"grades":    gradeScale, // шкала сверху вниз, с пояснениями
 	}
-	for _, p := range []string{"list", "book", "edition_form", "copy_form", "scan", "loans", "borrower", "value", "series", "genres", "person", "people", "devices", "alib", "sets", "set", "rsl_wait"} {
+	for _, p := range []string{"list", "book", "edition_form", "copy_form", "scan", "loans", "borrower", "value", "series", "genres", "person", "people", "devices", "alib", "sets", "set", "rsl_wait", "book_delete"} {
 		t, err := template.New("").Funcs(funcs).ParseFS(files, "tmpl/layout.html", "tmpl/copyfields.html", "tmpl/loanlist.html", "tmpl/"+p+".html")
 		if err != nil {
 			return nil, err
@@ -117,6 +117,8 @@ func New(st *catalog.Store, covers string, opts ...Option) (http.Handler, error)
 	mux.HandleFunc("GET /book/{id}/rsl", s.rslSearch)
 	mux.HandleFunc("GET /book/{id}/rsl/status", s.rslStatus)
 	mux.HandleFunc("POST /book/{id}/edit", s.edit)
+	mux.HandleFunc("GET /book/{id}/delete", s.deleteBookForm)
+	mux.HandleFunc("POST /book/{id}/delete", s.deleteBook)
 	mux.HandleFunc("GET /book/{id}/alib", s.alibForm)
 	mux.HandleFunc("POST /book/{id}/alib", s.alibTake)
 	mux.HandleFunc("POST /book/{id}/alib/value", s.alibValue)
@@ -300,6 +302,7 @@ func (s *server) list(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "list", struct {
 		Title                     string
 		Q, View, Genre            string
+		Deleted                   string // название только что удалённой книги
 		GenreID                   int64
 		Rows                      []catalog.Row
 		Total, Page               int
@@ -308,7 +311,7 @@ func (s *server) list(w http.ResponseWriter, r *http.Request) {
 		Prev, Next, Tiles, List   template.URL
 		NoGenre, NoQuery, AllBook template.URL
 	}{
-		Title: "Каталог", Q: q, View: view, Genre: genre, GenreID: g, Rows: rows, Total: total, Page: page,
+		Title: "Каталог", Q: q, View: view, Genre: genre, Deleted: r.URL.Query().Get("deleted"), GenreID: g, Rows: rows, Total: total, Page: page,
 		HasNext: page*pageSize < total, Stats: stats,
 		Prev: link(view, g, page-1), Next: link(view, g, page+1), Tiles: link("tiles", g, 1), List: link("list", g, 1),
 		NoGenre: link(view, 0, 1), AllBook: "/",
