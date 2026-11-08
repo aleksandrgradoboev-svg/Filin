@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -115,14 +116,54 @@ func (s *server) renderSet(w http.ResponseWriter, id int64, msg string) {
 		return
 	}
 	p := setPage{Title: c.Title, C: c, Places: places, Err: msg}
+	p.Have, p.Missing = haveMissing(places)
+	s.render(w, "set", p)
+}
+
+// haveMissing — сколько мест закрыто и названия незакрытых: «т. 3», «т. 9, кн. 2».
+func haveMissing(places []catalog.Place) (int, []string) {
+	have, missing := 0, []string(nil)
 	for _, pl := range places {
 		if pl.Have {
-			p.Have++
+			have++
 		} else {
-			p.Missing = append(p.Missing, pl.Name())
+			missing = append(missing, pl.Name())
 		}
 	}
-	s.render(w, "set", p)
+	return have, missing
+}
+
+// setValue — собрание на странице «Ценность»: чего не хватает и во что оценено.
+type setValue struct {
+	ID      int64
+	Title   string
+	Places  int
+	Have    int
+	Missing []string
+	catalog.SetWorth
+}
+
+// setValues — собрания для «Ценности»: сначала почти полные — им «докупить т. 3» нужнее всего.
+func (s *server) setValues() ([]setValue, error) {
+	rows, err := s.st.Sets()
+	if err != nil {
+		return nil, err
+	}
+	var out []setValue
+	for _, r := range rows {
+		_, places, err := s.st.Set(r.ID)
+		if err != nil {
+			return nil, err
+		}
+		v := setValue{ID: r.ID, Title: r.Title, Places: len(places)}
+		v.Have, v.Missing = haveMissing(places)
+		if v.SetWorth, err = s.st.SetWorth(r.ID); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return len(out[i].Missing) < len(out[j].Missing) })
+	return out, nil
 }
 
 // setAction — правка собрания формой: при ошибке ввода страница собрания с сообщением.

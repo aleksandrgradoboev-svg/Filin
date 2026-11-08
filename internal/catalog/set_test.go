@@ -170,3 +170,42 @@ func mustRefs(t *testing.T, s string, book int) []PlaceRef {
 	}
 	return r
 }
+
+// Оценка собрания — сумма действующих оценок его экземпляров; сдвоенный том — один раз,
+// чужие книги не считаются.
+func TestSetWorth(t *testing.T) {
+	s := newStore(t)
+	id, err := s.CreateSet(&Collection{Title: "Собрание", VolumesAnnounced: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e1, c1 := lentCopy(t, s, "Т. 1")
+	e23, c23 := lentCopy(t, s, "Т. 2-3")
+	_, _ = lentCopy(t, s, "Т. 4 — экземпляр есть, оценки нет") // не на месте: чужая книга
+	_, other := lentCopy(t, s, "Чужая книга")
+	for _, p := range []struct {
+		ed   int64
+		vols string
+	}{{e1, "1"}, {e23, "2-3"}} {
+		if err := s.PutInSet(p.ed, id, mustRefs(t, p.vols, 0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, v := range []Valuation{
+		{CopyID: c1, Amount: 300, ValuedOn: "2026-01-01"},
+		{CopyID: c1, Amount: 500, ValuedOn: "2026-11-01"}, // действует последняя
+		{CopyID: c23, Amount: 200, AmountTo: 700},
+		{CopyID: other, Amount: 9999},
+	} {
+		if _, err := s.AddValuation(&v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w, err := s.SetWorth(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w != (SetWorth{Copies: 2, Valued: 2, Total: 700, TotalTo: 1200}) {
+		t.Errorf("оценка собрания: %+v", w)
+	}
+}
