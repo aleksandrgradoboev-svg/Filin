@@ -1,9 +1,10 @@
 # Сборка выпуска Филина: файлы для страницы выпуска на GitHub.
 #
-#   pwsh release.ps1 -Version v0.5.0 [-Apk data\app\filin.apk]
+#   pwsh release.ps1 -Version v0.5.0 [-Apk data\app\filin.apk] [-Iscc путь\ISCC.exe]
 #
-# Кладёт в dist\ три файла выпуска:
-#   filin.exe — программа без окна консоли, с версией;
+# Кладёт в dist\ четыре файла выпуска:
+#   filin-setup.exe — установщик для людей (Inno Setup, installer\filin.iss);
+#   filin.exe — программа без окна консоли, с версией: её же качает самообновление;
 #   filin.apk и app.json — приложение для телефона и его номер версии (выложенные
 #   android/publish.ps1). Внутрь filin.exe приложение не вшивается: оно меняется реже
 #   программы и весило две трети каждого обновления. Филин сам докачивает его из выпуска,
@@ -11,10 +12,21 @@
 # Тег и сам выпуск делаются после влития в main: собирать выпуск надо из main.
 param(
     [Parameter(Mandatory)] [ValidatePattern('^v\d+\.\d+\.\d+$')] [string] $Version,
-    [string] $Apk = (Join-Path $PSScriptRoot 'data\app\filin.apk')
+    [string] $Apk = (Join-Path $PSScriptRoot 'data\app\filin.apk'),
+    # компилятор Inno Setup; пусто — переменная FILIN_ISCC, потом PATH и обычные места установки
+    [string] $Iscc = $env:FILIN_ISCC
 )
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
+
+if (-not $Iscc) {
+    $Iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+}
+if (-not $Iscc) {
+    $Iscc = @("$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
+              "$env:ProgramFiles\Inno Setup 7\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+if (-not $Iscc -or -not (Test-Path $Iscc)) { throw 'нет компилятора Inno Setup 7 (ISCC.exe): задайте -Iscc или FILIN_ISCC' }
 
 $branch = git rev-parse --abbrev-ref HEAD
 if ($branch -ne 'main') { throw "выпуск собирается из main, а сейчас $branch" }
@@ -41,6 +53,10 @@ if ($LASTEXITCODE -ne 0) { throw 'сборка filin.exe не удалась' }
 # и пустой вывод проходил проверку молча (так собирался v0.5.0)
 $got = (& .\dist\filin.exe version | Out-String).Trim()
 if (-not $got.Contains($Version)) { throw "в filin.exe не та версия: «$got»" }
+
+# установщик — из только что собранного exe; версия без «v»: Windows показывает её в «Приложениях»
+& $Iscc /Q "/DAppVersion=$($Version.TrimStart('v'))" "/DExe=..\dist\filin.exe" "/O..\dist" installer\filin.iss
+if ($LASTEXITCODE -ne 0) { throw 'сборка установщика не удалась' }
 
 Copy-Item $Apk dist\filin.apk -Force
 Copy-Item $appJson dist\app.json -Force
