@@ -54,9 +54,14 @@ if ($LASTEXITCODE -ne 0) { throw 'сборка filin.exe не удалась' }
 $got = (& .\dist\filin.exe version | Out-String).Trim()
 if (-not $got.Contains($Version)) { throw "в filin.exe не та версия: «$got»" }
 
-# установщик — из только что собранного exe; версия без «v»: Windows показывает её в «Приложениях»
-& $Iscc /Q "/DAppVersion=$($Version.TrimStart('v'))" "/DExe=..\dist\filin.exe" "/O..\dist" installer\filin.iss
+# установщик — из только что собранного exe; версия без «v»: Windows показывает её в «Приложениях».
+# Пути полные: /O ISCC считает от текущей папки, а не от папки .iss, — с «..\dist» установщик
+# молча лёг на уровень выше репозитория (сборка v1.3.0)
+$dist = Join-Path $PSScriptRoot 'dist'
+Remove-Item (Join-Path $dist 'filin-setup.exe') -ErrorAction SilentlyContinue
+& $Iscc /Q "/DAppVersion=$($Version.TrimStart('v'))" "/DExe=$dist\filin.exe" "/O$dist" installer\filin.iss
 if ($LASTEXITCODE -ne 0) { throw 'сборка установщика не удалась' }
+if (-not (Test-Path (Join-Path $dist 'filin-setup.exe'))) { throw "установщик собрался, но в $dist его нет" }
 
 Copy-Item $Apk dist\filin.apk -Force
 Copy-Item $appJson dist\app.json -Force
