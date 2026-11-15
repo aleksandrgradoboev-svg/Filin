@@ -115,16 +115,16 @@ func (s *server) access(h http.Handler) http.Handler {
 				http.StatusForbidden)
 			return
 		}
-		// архив всей библиотеки по домашней сети не раздаётся — даже привязанному телефону
-		if r.URL.Path == "/backup" && !local {
-			http.Error(w, "резервная копия снимается только на компьютере, на котором стоит Филин", http.StatusForbidden)
+		// вся библиотека (архив, выгрузка) по домашней сети не раздаётся — даже привязанному телефону
+		if wholeLibrary(r.URL.Path) && !local {
+			http.Error(w, "резервная копия и выгрузка — только на компьютере, на котором стоит Филин", http.StatusForbidden)
 			return
 		}
 		// и не по ссылке с чужого сайта: <img src="…/backup"> гонял бы снимок всей базы.
 		// Браузер говорит, откуда запрос; нет заголовка — не браузер (curl), пускаем
-		if r.URL.Path == "/backup" {
+		if wholeLibrary(r.URL.Path) {
 			if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
-				http.Error(w, "резервная копия — только кнопкой в самом Филине", http.StatusForbidden)
+				http.Error(w, "резервная копия и выгрузка — только кнопкой в самом Филине", http.StatusForbidden)
 				return
 			}
 		}
