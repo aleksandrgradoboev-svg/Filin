@@ -87,6 +87,8 @@ func app(d *sql.DB, path, covers string) error {
 			u.check(false)
 		}()
 	}
+	items = append(items, desktop.TrayItem{Title: "Сообщить об ошибке", Tip: "Открыть новое обращение на GitHub",
+		Do: func() { desktop.OpenBrowser(reportURL(version)) }})
 	desktop.Tray("Филин "+version, items, func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
