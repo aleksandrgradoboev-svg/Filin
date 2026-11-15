@@ -56,10 +56,9 @@ type updater struct {
 	// времени — на медленном канале минут 20), недокачанное продолжится при следующем запуске
 	stop context.CancelFunc
 
-	d      *sql.DB
-	path   string // база
-	covers string
-	quit   func() // закрыть программу: сова → «Закрыть Филин»
+	d    *sql.DB
+	l    layout // где база, обложки, копии и приложение для телефона
+	quit func() // закрыть программу: сова → «Закрыть Филин»
 }
 
 // supported — можно ли обновляться: только выпуск под Windows. Сборку разработчика (dev)
@@ -119,7 +118,7 @@ func (u *updater) check(manual bool) {
 		say("стоит последняя версия, " + version + ".")
 		return
 	}
-	dir, _ := filepath.Abs(filepath.Dir(u.path))
+	dir, _ := filepath.Abs(u.l.Copies)
 	if !desktop.Ask("Филин — обновление", fmt.Sprintf("Вышел Филин %s, сейчас стоит %s.\n\nОбновить сейчас? "+
 		"Филин закроется и откроется снова через несколько секунд.\n\nПеред обновлением в папке\n%s\n"+
 		"сохранится копия библиотеки — на случай, если понадобится вернуться.\n\nЧто нового: %s",
@@ -163,14 +162,14 @@ func (u *updater) check(manual bool) {
 	u.quit()
 }
 
-// syncApp кладёт в каталог приложения (<данные>/app) приложение для телефона из выпуска,
+// syncApp кладёт в каталог приложения (папка «телефон») приложение для телефона из выпуска,
 // если там оно новее. Одновременно — одно; оборвалось — докачается при следующей проверке.
 func (u *updater) syncApp(rel update.Release, ua string) {
 	if !u.appBusy.CompareAndSwap(false, true) {
 		return
 	}
 	defer u.appBusy.Store(false)
-	dir := filepath.Join(filepath.Dir(u.path), "app")
+	dir := u.l.Phone
 	before, _ := os.ReadFile(filepath.Join(dir, update.AppInfo))
 	got, err := update.SyncApp(context.Background(), http.DefaultClient, rel, dir, ua)
 	switch {
@@ -226,24 +225,24 @@ func (u *updater) apply(ctx context.Context, exe string, rel update.Release, ua 
 		os.Remove(update.NewPath(exe))
 		return err
 	}
-	pruneCopies(filepath.Dir(u.path), keepCopies)
+	pruneCopies(u.l.Copies, keepCopies)
 	return nil
 }
 
 // copyPrefix — начало имени копии перед обновлением: filin-перед-v0.6.1-2026-11-08.zip.
 const copyPrefix = "filin-перед-"
 
-// backup — копия библиотеки рядом с базой. Пишется во временный файл и переименовывается:
+// backup — копия библиотеки в папке копий. Пишется во временный файл и переименовывается:
 // недописанная копия не должна выглядеть готовой.
 func (u *updater) backup(next string) (string, error) {
-	dir := filepath.Dir(u.path)
+	dir := u.l.Copies
 	name := filepath.Join(dir, fmt.Sprintf("%s%s-%s.zip", copyPrefix, next, time.Now().Format("2006-01-02")))
 	f, err := os.CreateTemp(dir, ".копия-*.zip")
 	if err != nil {
 		return "", err
 	}
 	tmp := f.Name()
-	err = backup.Write(context.Background(), f, u.d, u.covers, os.TempDir())
+	err = backup.Write(context.Background(), f, u.d, u.l.Covers, os.TempDir())
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
