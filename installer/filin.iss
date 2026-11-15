@@ -1,6 +1,7 @@
 ﻿; Установщик Филина (Inno Setup). Собирается release.ps1:
 ;   ISCC.exe /DAppVersion=1.3.0 /DExe=..\dist\filin.exe /O..\dist installer\filin.iss
 ;
+; Журнал установки — %TEMP%\Setup Log <дата> #NNN.txt (SetupLogging): по нему разбирать жалобы.
 ; Ставит для текущего пользователя, без прав администратора: Филин сам обновляет свой exe,
 ; а в Program Files без прав администратора не записать. Папка по умолчанию — папка
 ; пользователя, не «Документы»: их часто синхронизирует OneDrive.
@@ -24,6 +25,7 @@ AppPublisherURL=https://github.com/aleksandrgradoboev-svg/Filin
 AppSupportURL=https://github.com/aleksandrgradoboev-svg/Filin/issues
 AppUpdatesURL=https://github.com/aleksandrgradoboev-svg/Filin/releases
 DefaultDirName={%USERPROFILE}\Филин
+SetupLogging=yes
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 DisableWelcomePage=yes
@@ -83,6 +85,36 @@ Type: files; Name: "{app}\filin.exe.*.part"
 Type: files; Name: "{app}\.ярлыки-спрошены"
 
 [Code]
+// CanWriteTo — можно ли этому пользователю создать папку Dir: пробуем создать и сразу убрать
+// временную папку в ближайшей существующей. Без этой проверки выбранная через «Обзор» чужая
+// папка (старый профиль другой учётной записи, 15.11.2026) роняла установку уже после
+// «Установить» — «Ошибка 5: Отказано в доступе».
+function CanWriteTo(Dir: String): Boolean;
+var
+  P, Probe: String;
+begin
+  P := RemoveBackslashUnlessRoot(Dir);
+  while (not DirExists(P)) and (ExtractFileDir(P) <> P) do
+    P := ExtractFileDir(P);
+  Probe := AddBackslash(P) + '.filin-проба-записи-' + IntToStr(Random(1000000));
+  Result := CreateDir(Probe);
+  if Result then
+    RemoveDir(Probe);
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if (CurPageID = wpSelectDir) and (not CanWriteTo(WizardDirValue)) then
+  begin
+    Log('нет записи в ' + WizardDirValue);
+    MsgBox('В папку' + #13#10 + WizardDirValue + #13#10 +
+           'Windows не даёт записывать: она принадлежит другой учётной записи или системе.' + #13#10#13#10 +
+           'Выберите другую — например, ту, что предложена по умолчанию.', mbError, MB_OK);
+    Result := False;
+  end;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   Lib, Copies: String;
