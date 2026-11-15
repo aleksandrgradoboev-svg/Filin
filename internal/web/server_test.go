@@ -552,3 +552,39 @@ func TestHostGuard(t *testing.T) {
 		}
 	}
 }
+
+// Выгрузка — как резервная копия: с компьютера скачивается, по сети и по чужой ссылке — нет.
+func TestExportDownload(t *testing.T) {
+	a := newNetApp(t, Program("v1.2.3"))
+	if _, err := a.st.AddEdition(&catalog.Edition{Title: "Илиада"}); err != nil {
+		t.Fatal(err)
+	}
+	if code, b := a.do(local, "GET", "/export", "", "", nil); code != http.StatusOK ||
+		!bytes.Contains(b, []byte(`href="/export/catalog.csv"`)) || !bytes.Contains(b, []byte(`href="/export/catalog.json"`)) {
+		t.Fatalf("страница выгрузки: %d", code)
+	}
+	code, b := a.do(local, "GET", "/export/catalog.csv", "", "", nil)
+	if code != http.StatusOK || !bytes.HasPrefix(b, []byte("\xEF\xBB\xBF")) || !bytes.Contains(b, []byte("Илиада")) {
+		t.Fatalf("CSV: %d %q", code, b)
+	}
+	code, b = a.do(local, "GET", "/export/catalog.json", "", "", nil)
+	if code != http.StatusOK || !bytes.Contains(b, []byte(`"program": "v1.2.3"`)) || !bytes.Contains(b, []byte("Илиада")) {
+		t.Fatalf("JSON: %d %s", code, b)
+	}
+	if code, _ := a.do(local, "GET", "/export/catalog.xml", "", "", nil); code != http.StatusNotFound {
+		t.Errorf("неизвестный формат: %d", code)
+	}
+	for _, p := range []string{"/export", "/export/catalog.csv", "/export/catalog.json"} {
+		if code, _ := a.do("192.168.1.50:5000", "GET", p, "", "", nil); code != http.StatusForbidden {
+			t.Errorf("%s по сети: %d", p, code)
+		}
+		r := httptest.NewRequest("GET", "http://127.0.0.1:8080"+p, nil)
+		r.RemoteAddr = local
+		r.Header.Set("Sec-Fetch-Site", "cross-site")
+		w := httptest.NewRecorder()
+		a.h.ServeHTTP(w, r)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("%s по чужой ссылке: %d", p, w.Code)
+		}
+	}
+}

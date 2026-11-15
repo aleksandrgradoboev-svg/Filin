@@ -36,16 +36,17 @@ const pageSize = 60
 const maxUpload = 25 << 20
 
 type server struct {
-	st     *catalog.Store
-	covers cover.Dir
-	pages  map[string]*template.Template
-	pair   pairing // код привязки телефона
-	appDir string  // выложенное приложение для телефона: рядом с обложками, <данные>/app
-	rsl    rsl.Client
-	alib   *alib.Client // один на сервер: пауза между запросами к alib общая
-	ocr    Recognizer
-	probes ocr.Samples // пробы распознавания титулов: <данные>/ocr
-	phone  []string    // адреса для телефона в домашней сети: показываются на странице «Телефоны»
+	st      *catalog.Store
+	covers  cover.Dir
+	pages   map[string]*template.Template
+	pair    pairing // код привязки телефона
+	appDir  string  // выложенное приложение для телефона: рядом с обложками, <данные>/app
+	rsl     rsl.Client
+	alib    *alib.Client // один на сервер: пауза между запросами к alib общая
+	ocr     Recognizer
+	probes  ocr.Samples // пробы распознавания титулов: <данные>/ocr
+	phone   []string    // адреса для телефона в домашней сети: показываются на странице «Телефоны»
+	program string      // версия Филина — для выгрузки
 
 	rslSearcher RSLSearcher       // поиск РГБ со списком на компьютере; nil — только ссылка
 	rslMu       sync.Mutex        // охраняет rslJobs
@@ -88,7 +89,7 @@ func New(st *catalog.Store, covers string, opts ...Option) (http.Handler, error)
 		"grades":    gradeScale, // шкала сверху вниз, с пояснениями
 		"crumbs":    crumbs,
 	}
-	for _, p := range []string{"list", "book", "edition_form", "copy_form", "scan", "loans", "borrower", "value", "series", "genres", "person", "people", "devices", "alib", "sets", "set", "rsl_wait", "book_delete"} {
+	for _, p := range []string{"list", "book", "edition_form", "copy_form", "scan", "loans", "borrower", "value", "series", "genres", "person", "people", "devices", "alib", "sets", "set", "rsl_wait", "book_delete", "export"} {
 		t, err := template.New("").Funcs(funcs).ParseFS(files, "tmpl/layout.html", "tmpl/copyfields.html", "tmpl/loanlist.html", "tmpl/"+p+".html")
 		if err != nil {
 			return nil, err
@@ -161,6 +162,8 @@ func New(st *catalog.Store, covers string, opts ...Option) (http.Handler, error)
 	mux.HandleFunc("POST /api/title", s.apiTitle)
 	mux.HandleFunc("GET /app.apk", s.appAPK)
 	mux.HandleFunc("GET /backup", s.backup)
+	mux.HandleFunc("GET /export", s.exportPage)
+	mux.HandleFunc("GET /export/{file}", s.exportFile) // catalog.csv, catalog.json
 	mux.HandleFunc("GET /api/ping", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, PingBody) })
 	return guardHost(sameOrigin(s.access(mux))), nil
 }

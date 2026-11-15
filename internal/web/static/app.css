@@ -169,10 +169,11 @@ input, textarea { background: rgba(255, 250, 235, .75); border-color: #cdb47e; }
 dt { font-variant: small-caps; letter-spacing: .03em; }
 
 /* выдача почитать */
-/* в шапке только значки, когда подписи не влезают в строку. Пороги — по замеру 08.11.2026
-   с запасом на шрифты: четыре кнопки с подписями (узкий экран, без «Телефонов» и «Копии»)
-   требуют ~600 px, все шесть — ~845 px. Добавили кнопку — перемерить */
-@media (max-width: 660px), (min-width: 769px) and (max-width: 920px) {
+/* в шапке только значки, когда подписи не влезают в строку. Пороги — по замеру 15.11.2026
+   с запасом на шрифты: четыре кнопки с подписями (узкий экран, без «Телефонов», «Копии»
+   и «Выгрузки») требуют ~611 px, все семь — ~991 px, семь значков — ~563 px.
+   Добавили кнопку — перемерить */
+@media (max-width: 660px), (min-width: 769px) and (max-width: 1070px) {
   .top .lbl { display: none; } .top .btn { min-width: 42px; text-align: center; } }
 .tiles .lent { position: static; align-self: flex-start; margin-top: -26px; margin-left: 6px; z-index: 1;
   font-size: .74rem; padding: 1px 7px; border-radius: 10px; background: #2f5d3a; color: #f5ecd2; }
@@ -269,3 +270,8 @@ h3.role { font-family: var(--serif); margin: 18px 0 8px; color: var(--muted); }
 .qr-step { display: flex; gap: 16px; align-items: center; margin: 8px 0; }
 .qr-step .qr { background: #fff; padding: 8px; border-radius: 6px; flex: none; image-rendering: pixelated; }
 @media (max-width: 520px) { .qr-step { flex-direction: column; align-items: flex-start; } }
+
+/* выгрузка: кнопка — блок с пояснением */
+.downloads { display: grid; gap: 12px; margin: 12px 0; }
+.downloads .btn { display: block; text-align: left; white-space: normal; padding: 14px 16px; }
+.downloads .btn small { display: block; font-weight: 400; opacity: .85; margin-top: 4px; }

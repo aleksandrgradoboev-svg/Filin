@@ -48,7 +48,7 @@ func app(d *sql.DB, path, covers string) error {
 		log.Print("домашняя сеть не найдена — Филин виден только на этом компьютере")
 	}
 
-	opts := []web.Option{web.OCR(startOCR(filepath.Dir(path))), web.PhoneURLs(phone)}
+	opts := []web.Option{web.OCR(startOCR(filepath.Dir(path))), web.PhoneURLs(phone), web.Program(version)}
 	// «Дополнить из РГБ» в браузере на этом компьютере — поиск и список «Это она», как на телефоне
 	opts = append(opts, rslSearch()...)
 	h, err := web.New(catalog.New(d), covers, opts...)

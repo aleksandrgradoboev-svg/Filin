@@ -6,6 +6,7 @@
 //	filin stats          — что лежит в базе
 //	filin restore файл.zip — восстановить библиотеку из резервной копии (Филин закрыт)
 //	filin install / uninstall — ярлыки «Филин» в «Пуске» и на рабочем столе
+//	filin export -csv файл.csv -json файл.json — выгрузка каталога (можно один из двух)
 //	filin import-livelib файл.mhtml… — книги со страниц полок LiveLib, сохранённых вручную
 //	filin version
 package main
@@ -97,7 +98,7 @@ func main() {
 	flag.String("tesseract", "", "не используется: распознавание встроено")
 	flag.StringVar(updatesURL, "updates", update.LatestURL, "где узнавать о новых выпусках (app); пусто — не проверять")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "использование: filin [-db путь] [-port 8080] [app | serve | stats | restore файл.zip | install | uninstall | import-livelib файл.mhtml… | import-livelib-genres жанры.mhtml | version]")
+		fmt.Fprintln(os.Stderr, "использование: filin [-db путь] [-port 8080] [app | serve | stats | export -csv файл -json файл | restore файл.zip | install | uninstall | import-livelib файл.mhtml… | import-livelib-genres жанры.mhtml | version]")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -142,7 +143,7 @@ func run(cmd, path, addr string, args []string) error {
 		return install(path)
 	case "uninstall":
 		return uninstall()
-	case "app", "serve", "stats", "import-livelib", "import-livelib-genres":
+	case "app", "serve", "stats", "export", "import-livelib", "import-livelib-genres":
 	default:
 		flag.Usage()
 		return fmt.Errorf("неизвестная команда %q", cmd)
@@ -167,6 +168,8 @@ func run(cmd, path, addr string, args []string) error {
 		return app(d, path, covers)
 	case "serve":
 		return serve(d, addr, covers)
+	case "export":
+		return exportCatalog(catalog.New(d), args)
 	case "import-livelib":
 		return importLiveLib(catalog.New(d), cover.Dir(covers), args)
 	case "import-livelib-genres":
@@ -187,7 +190,7 @@ func run(cmd, path, addr string, args []string) error {
 
 func serve(d *sql.DB, addr, covers string) error {
 	// поиск РГБ со списком — и здесь: по нажатию с этого же компьютера, как в программе
-	opts := append([]web.Option{web.OCR(startOCR(filepath.Dir(covers)))}, rslSearch()...)
+	opts := append([]web.Option{web.OCR(startOCR(filepath.Dir(covers))), web.Program(version)}, rslSearch()...)
 	h, err := web.New(catalog.New(d), covers, opts...)
 	if err != nil {
 		return err
