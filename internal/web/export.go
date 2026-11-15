@@ -14,6 +14,9 @@ import (
 // Program — версия Филина: пишется в выгрузку JSON, чтобы было видно, кто её снял.
 func Program(v string) Option { return func(s *server) { s.program = v } }
 
+// AppDir — где лежит приложение для телефона; без него — папка app рядом с обложками.
+func AppDir(dir string) Option { return func(s *server) { s.appDir = dir } }
+
 // exportPage — страница «Выгрузка»: каталог таблицей и целиком.
 func (s *server) exportPage(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "export", struct{ Title string }{"Выгрузка"})

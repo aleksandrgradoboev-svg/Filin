@@ -34,6 +34,9 @@ import (
 // version ставится при сборке выпуска: -ldflags "-X main.version=v0.5.0".
 var version = "dev"
 
+// arranged — итог раскладки по подпапкам для журнала: раскладка идёт до того, как журнал открыт.
+var arranged string
+
 var (
 	port     *string
 	explicit = map[string]bool{} // флаги, заданные человеком, а не по умолчанию: их помнит ярлык
@@ -65,29 +68,9 @@ func writable(dir string) error {
 	return os.Remove(f.Name())
 }
 
-// defaultDB — где библиотека, если -db не задан: рядом с программой. Человек кладёт filin.exe
-// в папку — там и живут база и фото; перенести Филина — перенести папку. Исключение —
-// go run: там программа во временной папке сборки, и база — по-старому, в data\ разработчика.
-func defaultDB() string {
-	if exe, err := os.Executable(); err == nil {
-		if dir := filepath.Dir(exe); !strings.Contains(strings.ToLower(dir), "go-build") {
-			// прежний умолчальный адрес — data/filin.db: библиотеку, заведённую до 0.5.1
-			// запуском без -db из папки программы, не подменять новой пустой
-			if _, err := os.Stat(filepath.Join(dir, "filin.db")); err != nil {
-				old := filepath.Join(dir, "data", "filin.db")
-				if _, err := os.Stat(old); err == nil {
-					return old
-				}
-			}
-			return filepath.Join(dir, "filin.db")
-		}
-	}
-	return filepath.Join("data", "filin.db")
-}
-
 func main() {
 	desktop.AttachConsole() // выпуск собран без консоли; из терминала — печатать в него
-	path := flag.String("db", "", "путь к файлу базы; пусто — filin.db рядом с программой")
+	path := flag.String("db", "", `путь к файлу базы; пусто — библиотека\filin.db рядом с программой`)
 	// serve: по умолчанию — только этот компьютер; адреса через запятую. Из сети пускаются только
 	// привязанные телефоны, а привязка — со страницы «Телефоны», которая открывается только на
 	// 127.0.0.1: его не убирать. app сам находит адреса домашней сети, ему нужен только порт.
@@ -103,11 +86,9 @@ func main() {
 	}
 	flag.Parse()
 	flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
-	if *path == "" {
-		*path = defaultDB()
-	}
+	l := chooseLayout(*path)
 	cmd, args := route(flag.Args())
-	if err := run(cmd, *path, *addr, args); err != nil {
+	if err := run(cmd, &l, *addr, args); err != nil {
 		if cmd == "app" || cmd == "restore-drop" { // терминала нет — сказать окном
 			desktop.Message("Филин не запустился", err.Error())
 		}
@@ -117,9 +98,8 @@ func main() {
 	restart() // обновление встало — база уже закрыта, порт свободен
 }
 
-func run(cmd, path, addr string, args []string) error {
-	// обложки — рядом с базой: копируются и переносятся вместе с ней
-	covers := filepath.Join(filepath.Dir(path), "covers")
+func run(cmd string, l *layout, addr string, args []string) error {
+	path, covers := l.DB, l.Covers
 	switch cmd {
 	case "version":
 		fmt.Println("Филин", version)
@@ -140,7 +120,7 @@ func run(cmd, path, addr string, args []string) error {
 		desktop.Message("Филин — восстановление", msg)
 		return nil
 	case "install":
-		return install(path)
+		return install(*l)
 	case "uninstall":
 		return uninstall()
 	case "app", "serve", "stats", "export", "import-livelib", "import-livelib-genres":
@@ -152,8 +132,24 @@ func run(cmd, path, addr string, args []string) error {
 		// уже запущен — второй сервер не поднимаем, просто показываем каталог
 		return desktop.OpenBrowser("http://127.0.0.1:" + *port + "/")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+	if cmd == "app" && l.old {
+		// Филин не запущен, база закрыта — можно разложить по подпапкам. Только программой:
+		// команда из терминала при работающем Филине унесла бы базу из-под него. Свой порт
+		// проверен выше; Филин мог быть запущен и ярлыком с обычным портом, как в restore
+		if desktop.Running("8080", web.PingBody) {
+			arranged = "раскладка по папкам отложена: на порту 8080 работает другой Филин"
+		} else if n, err := arrange(l.Root, time.Now()); err != nil {
+			arranged = "раскладка по папкам не удалась, Филин работает по-старому: " + err.Error()
+		} else {
+			*l = treeLayout(l.Root)
+			path, covers = l.DB, l.Covers
+			arranged = fmt.Sprintf("Филин разложен по подпапкам: перемещено %d, копия базы — в %s", n, dirCopies)
+		}
+	}
+	for _, d := range l.dirs() {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			return err
+		}
 	}
 	if err := writable(filepath.Dir(path)); err != nil {
 		return err
@@ -165,9 +161,9 @@ func run(cmd, path, addr string, args []string) error {
 	defer d.Close()
 	switch cmd {
 	case "app":
-		return app(d, path, covers)
+		return app(d, *l)
 	case "serve":
-		return serve(d, addr, covers)
+		return serve(d, addr, *l)
 	case "export":
 		return exportCatalog(catalog.New(d), args)
 	case "import-livelib":
@@ -188,10 +184,10 @@ func run(cmd, path, addr string, args []string) error {
 	return nil
 }
 
-func serve(d *sql.DB, addr, covers string) error {
+func serve(d *sql.DB, addr string, l layout) error {
 	// поиск РГБ со списком — и здесь: по нажатию с этого же компьютера, как в программе
-	opts := append([]web.Option{web.OCR(startOCR(filepath.Dir(covers))), web.Program(version)}, rslSearch()...)
-	h, err := web.New(catalog.New(d), covers, opts...)
+	opts := append([]web.Option{web.OCR(startOCR(l.Models)), web.AppDir(l.Phone), web.Program(version)}, rslSearch()...)
+	h, err := web.New(catalog.New(d), l.Covers, opts...)
 	if err != nil {
 		return err
 	}

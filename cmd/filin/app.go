@@ -21,8 +21,11 @@ import (
 
 // app — Филин как программа: сервер на этом компьютере и в домашней сети, каталог в
 // браузере, сова в трее. Закрыли — сервер остановлен, телефон Филина не видит.
-func app(d *sql.DB, path, covers string) error {
-	logTo(filepath.Join(filepath.Dir(path), "filin.log"))
+func app(d *sql.DB, l layout) error {
+	logTo(filepath.Join(l.Log, "filin.log"))
+	if arranged != "" {
+		log.Print(arranged)
+	}
 
 	// 127.0.0.1 обязателен: с него открываются «Телефоны» и резервная копия
 	local, err := net.Listen("tcp", "127.0.0.1:"+*port)
@@ -48,10 +51,10 @@ func app(d *sql.DB, path, covers string) error {
 		log.Print("домашняя сеть не найдена — Филин виден только на этом компьютере")
 	}
 
-	opts := []web.Option{web.OCR(startOCR(filepath.Dir(path))), web.PhoneURLs(phone), web.Program(version)}
+	opts := []web.Option{web.OCR(startOCR(l.Models)), web.AppDir(l.Phone), web.PhoneURLs(phone), web.Program(version)}
 	// «Дополнить из РГБ» в браузере на этом компьютере — поиск и список «Это она», как на телефоне
 	opts = append(opts, rslSearch()...)
-	h, err := web.New(catalog.New(d), covers, opts...)
+	h, err := web.New(catalog.New(d), l.Covers, opts...)
 	if err != nil {
 		return err
 	}
@@ -66,7 +69,7 @@ func app(d *sql.DB, path, covers string) error {
 	}
 
 	home := "http://127.0.0.1:" + *port + "/"
-	offerShortcuts(path) // до браузера: вопрос не должен оказаться под ним
+	offerShortcuts(l) // до браузера: вопрос не должен оказаться под ним
 	if restarted() {
 		log.Print("запущен после обновления: каталог в браузере уже открыт")
 	} else if err := desktop.OpenBrowser(home); err != nil {
@@ -78,7 +81,7 @@ func app(d *sql.DB, path, covers string) error {
 	} else {
 		items = append(items, desktop.TrayItem{Title: "Домашняя сеть не найдена — телефон не увидит", Disabled: true})
 	}
-	u := &updater{d: d, path: path, covers: covers, quit: desktop.Quit}
+	u := &updater{d: d, l: l, quit: desktop.Quit}
 	if supported() {
 		items = append(items, desktop.TrayItem{Title: "Проверить обновления", Do: func() { u.check(true) }})
 		go func() {
@@ -97,12 +100,12 @@ func app(d *sql.DB, path, covers string) error {
 	return nil
 }
 
-// shortcutsAsked — пометка рядом с базой: про ярлыки уже спросили, второй раз не спрашивать.
+// shortcutsAsked — пометка в папке программы: про ярлыки уже спросили, второй раз не спрашивать.
 const shortcutsAsked = ".ярлыки-спрошены"
 
 // offerShortcuts — первый запуск двойным щелчком: человек без командной строки получает
 // ярлыки одним «Да». Есть ярлыки или уже спрашивали — молчит.
-func offerShortcuts(path string) {
+func offerShortcuts(l layout) {
 	lnks, err := desktop.Shortcuts()
 	if err != nil {
 		return // не Windows
@@ -113,11 +116,11 @@ func offerShortcuts(path string) {
 			have = false
 		}
 	}
-	marker := filepath.Join(filepath.Dir(path), shortcutsAsked)
+	marker := filepath.Join(l.Root, shortcutsAsked)
 	if _, err := os.Stat(marker); have || err == nil {
 		return
 	}
-	dir, _ := filepath.Abs(filepath.Dir(path))
+	dir, _ := filepath.Abs(l.Root)
 	yes := desktop.Ask("Филин", "Создать ярлык Филина в меню «Пуск» и на рабочем столе?\n\n"+
 		"Библиотека хранится в этой папке:\n"+dir+"\n\nПеренести Филина — значит перенести папку целиком.")
 	if err := os.WriteFile(marker, []byte("спрошено при первом запуске; удалить — спросит снова\n"), 0o644); err != nil {
@@ -126,13 +129,13 @@ func offerShortcuts(path string) {
 	if !yes {
 		return
 	}
-	if err := install(path); err != nil {
+	if err := install(l); err != nil {
 		log.Printf("ярлыки: %v", err)
 		desktop.Message("Филин", "Ярлыки не создались: "+err.Error())
 	}
 }
 
-// logTo пишет журнал в файл рядом с базой: у программы без консоли другого места нет.
+// logTo пишет журнал в файл (папка «журнал»): у программы без консоли другого места нет.
 // Больше мегабайта — прежний журнал откладывается в .1, чтобы файл не рос без предела.
 func logTo(p string) {
 	if st, err := os.Stat(p); err == nil && st.Size() > 1<<20 {
@@ -169,12 +172,12 @@ func restore(path, covers string, args []string) (string, error) {
 }
 
 // install делает ярлыки «Филин» с теми же базой и настройками, с которыми запущена команда.
-func install(path string) error {
+func install(l layout) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	dbAbs, err := filepath.Abs(path)
+	dbAbs, err := filepath.Abs(l.DB)
 	if err != nil {
 		return err
 	}
@@ -182,7 +185,7 @@ func install(path string) error {
 	if err := os.MkdirAll(filepath.Dir(dbAbs), 0o755); err != nil {
 		return err
 	}
-	icon := filepath.Join(filepath.Dir(dbAbs), "filin.ico")
+	icon := filepath.Join(l.Root, "filin.ico")
 	if err := os.WriteFile(icon, desktop.Icon, 0o644); err != nil {
 		return err
 	}
@@ -200,11 +203,11 @@ func install(path string) error {
 	if err != nil {
 		return err
 	}
-	for _, l := range lnks {
-		if err := desktop.MakeShortcut(l, exe, args, filepath.Dir(exe), icon); err != nil {
+	for _, lnk := range lnks {
+		if err := desktop.MakeShortcut(lnk, exe, args, filepath.Dir(exe), icon); err != nil {
 			return err
 		}
-		fmt.Println("ярлык:", l)
+		fmt.Println("ярлык:", lnk)
 	}
 	fmt.Printf("Готово. Филин запускается ярлыком; база %s.\n", dbAbs)
 	return nil
